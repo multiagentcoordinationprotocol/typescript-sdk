@@ -1,0 +1,5 @@
+dist/
+proto/
+coverage/
+docs/
+*.proto

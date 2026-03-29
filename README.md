@@ -1,0 +1,254 @@
+# macp-sdk-typescript
+
+TypeScript SDK for the [Multi-Agent Coordination Protocol (MACP)](https://github.com/multiagentcoordinationprotocol/multiagentcoordinationprotocol) runtime. Connects TypeScript/Node.js applications to the Rust MACP runtime over gRPC.
+
+## Install
+
+```bash
+npm install macp-sdk-typescript
+```
+
+## Quick Start
+
+```typescript
+import { Auth, MacpClient, DecisionSession } from 'macp-sdk-typescript';
+
+const client = new MacpClient({
+  address: '127.0.0.1:50051',
+  secure: false,
+  auth: Auth.devAgent('coordinator'),
+});
+
+await client.initialize();
+
+const session = new DecisionSession(client);
+await session.start({
+  intent: 'pick a deployment strategy',
+  participants: ['alice', 'bob'],
+  ttlMs: 60_000,
+});
+
+await session.propose({ proposalId: 'p1', option: 'canary', rationale: 'low risk' });
+
+await session.vote({
+  proposalId: 'p1',
+  vote: 'approve',
+  sender: 'alice',
+  auth: Auth.devAgent('alice'),
+});
+
+const winner = session.projection.majorityWinner();
+await session.commit({
+  action: 'deployment.approved',
+  authorityScope: 'release',
+  reason: `winner=${winner}`,
+});
+
+client.close();
+```
+
+## Architecture
+
+The SDK uses a **two-layer** design:
+
+- **Low-level transport** (`MacpClient`): gRPC connection to the runtime with all 14 RPCs — `initialize`, `send`, `openStream`, `getSession`, `cancelSession`, `getManifest`, `listModes`, `listRoots`, `listExtModes`, `registerExtMode`, `unregisterExtMode`, `promoteMode`, plus streaming watchers.
+- **High-level session helpers**: One class per coordination mode (`DecisionSession`, `ProposalSession`, `TaskSession`, `HandoffSession`, `QuorumSession`). Each wraps `MacpClient`, builds envelopes, encodes payloads, and maintains a local state projection.
+
+Every session class follows the same pattern:
+1. Construct with a `MacpClient` and options
+2. Call `start()` to initiate the session
+3. Call mode-specific methods (propose, vote, accept, etc.)
+4. Call `commit()` to finalize
+5. Read `session.projection` for local state
+
+## Coordination Modes
+
+### Decision Mode
+
+Structured decision with proposals, evaluations, objections, and votes.
+
+```typescript
+import { DecisionSession } from 'macp-sdk-typescript';
+
+const session = new DecisionSession(client);
+await session.start({ intent: '...', participants: ['alice'], ttlMs: 60_000 });
+await session.propose({ proposalId: 'p1', option: 'A', rationale: '...' });
+await session.evaluate({ proposalId: 'p1', recommendation: 'approve', confidence: 0.9 });
+await session.raiseObjection({ proposalId: 'p1', reason: 'risk', severity: 'high' });
+await session.vote({ proposalId: 'p1', vote: 'approve' });
+await session.commit({ action: 'decided', authorityScope: 'team', reason: '...' });
+
+// Projection queries
+session.projection.voteTotals();                 // { p1: 1 }
+session.projection.majorityWinner();             // 'p1'
+session.projection.hasBlockingObjection('p1');   // true (severity: high)
+```
+
+### Proposal Mode
+
+Proposal and counterproposal negotiation.
+
+```typescript
+import { ProposalSession } from 'macp-sdk-typescript';
+
+const session = new ProposalSession(client);
+await session.start({ intent: '...', participants: ['bob'], ttlMs: 60_000 });
+await session.propose({ proposalId: 'p1', title: 'Plan A', summary: '...' });
+await session.counterPropose({ proposalId: 'p2', supersedesProposalId: 'p1', title: 'Plan B' });
+await session.accept({ proposalId: 'p2', reason: 'better' });
+await session.commit({ action: 'proposal.accepted', authorityScope: 'team', reason: '...' });
+
+// Projection queries
+session.projection.activeProposals();            // proposals with status 'open'
+session.projection.isAccepted('p2');             // true
+session.projection.isTerminallyRejected('p1');   // false
+```
+
+### Task Mode
+
+Bounded task delegation.
+
+```typescript
+import { TaskSession } from 'macp-sdk-typescript';
+
+const session = new TaskSession(client);
+await session.start({ intent: '...', participants: ['worker'], ttlMs: 120_000 });
+await session.request({ taskId: 't1', title: 'Build feature', instructions: '...' });
+await session.acceptTask({ taskId: 't1', assignee: 'worker' });
+await session.update({ taskId: 't1', status: 'working', progress: 0.5, message: 'halfway' });
+await session.complete({ taskId: 't1', assignee: 'worker', summary: 'done' });
+await session.commit({ action: 'task.completed', authorityScope: 'lead', reason: '...' });
+
+// Projection queries
+session.projection.progressOf('t1');   // 1.0
+session.projection.isComplete('t1');   // true
+session.projection.activeTasks();      // []
+```
+
+### Handoff Mode
+
+Responsibility transfer between participants.
+
+```typescript
+import { HandoffSession } from 'macp-sdk-typescript';
+
+const session = new HandoffSession(client);
+await session.start({ intent: '...', participants: ['bob'], ttlMs: 60_000 });
+await session.offer({ handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' });
+await session.sendContext({ handoffId: 'h1', contentType: 'application/json', context: buf });
+await session.acceptHandoff({ handoffId: 'h1', acceptedBy: 'bob' });
+await session.commit({ action: 'handoff.accepted', authorityScope: 'team', reason: '...' });
+
+// Projection queries
+session.projection.isAccepted('h1');      // true
+session.projection.pendingHandoffs();     // []
+```
+
+### Quorum Mode
+
+Threshold-based approval voting.
+
+```typescript
+import { QuorumSession } from 'macp-sdk-typescript';
+
+const session = new QuorumSession(client);
+await session.start({ intent: '...', participants: ['alice', 'bob', 'carol'], ttlMs: 60_000 });
+await session.requestApproval({ requestId: 'r1', action: 'deploy', summary: '...', requiredApprovals: 2 });
+await session.approve({ requestId: 'r1', reason: 'ok' });
+await session.commit({ action: 'quorum.approved', authorityScope: 'ops', reason: '...' });
+
+// Projection queries
+session.projection.hasQuorum('r1');              // true/false
+session.projection.approvalCount('r1');          // number
+session.projection.remainingVotesNeeded('r1');   // number
+session.projection.votedSenders('r1');           // string[]
+```
+
+## Authentication
+
+```typescript
+// Development (uses x-macp-agent-id header)
+const auth = Auth.devAgent('my-agent');
+
+// Production (uses Authorization: Bearer header)
+const auth = Auth.bearer('token-value', 'sender-hint');
+```
+
+Pass `auth` to the client constructor for default auth, or per-method for multi-agent scenarios:
+
+```typescript
+await session.vote({
+  proposalId: 'p1',
+  vote: 'approve',
+  sender: 'alice',
+  auth: Auth.devAgent('alice'),
+});
+```
+
+## Streaming
+
+### Session Streaming
+
+```typescript
+const stream = client.openStream({ auth });
+await stream.send(envelope);
+
+for await (const envelope of stream.responses()) {
+  console.log(envelope.messageType, envelope.sender);
+}
+
+stream.close();
+```
+
+### Registry & Root Watchers
+
+```typescript
+import { ModeRegistryWatcher, RootsWatcher } from 'macp-sdk-typescript';
+
+const watcher = new ModeRegistryWatcher(client, { auth });
+
+// Async iterator with abort support
+const controller = new AbortController();
+for await (const change of watcher.changes(controller.signal)) {
+  console.log('registry changed at', change.observedAtUnixMs);
+}
+
+// Or one-shot
+const next = await watcher.nextChange();
+```
+
+## Error Handling
+
+```typescript
+import { MacpAckError, MacpTransportError } from 'macp-sdk-typescript';
+
+try {
+  await session.vote({ proposalId: 'p1', vote: 'approve' });
+} catch (err) {
+  if (err instanceof MacpAckError) {
+    console.log(err.ack.error?.code); // 'SESSION_NOT_OPEN', etc.
+  } else if (err instanceof MacpTransportError) {
+    console.log('gRPC connectivity issue');
+  }
+}
+```
+
+## Development
+
+```bash
+npm run build          # Compile TypeScript
+npm run check          # Type-check only
+npm run lint           # ESLint
+npm run format         # Prettier
+npm test               # Run all tests
+npm run test:watch     # Watch mode
+npm run test:coverage  # With coverage
+```
+
+## Runtime Boundary
+
+This SDK is a **client** for the MACP Rust runtime. The runtime handles session state, message ordering, deduplication, TTL enforcement, and mode-specific validation. The SDK provides typed helpers for building and sending envelopes, and local projections for tracking state client-side.
+
+## License
+
+Apache-2.0

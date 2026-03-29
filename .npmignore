@@ -1,0 +1,13 @@
+src/
+tests/
+examples/
+.github/
+coverage/
+docs/
+*.tgz
+.DS_Store
+CLAUDE.md
+vitest.config.ts
+eslint.config.mjs
+.prettierrc
+.prettierignore

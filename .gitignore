@@ -1,0 +1,14 @@
+node_modules/
+dist/
+*.js.map
+*.d.ts.map
+.DS_Store
+.env
+.env.local
+*.tgz
+coverage/
+.nyc_output/
+docs/
+.claude/
+CLAUDE.md
+plans/

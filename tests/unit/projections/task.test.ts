@@ -1,0 +1,121 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { TaskProjection } from '../../../src/projections/task';
+import { ProtoRegistry } from '../../../src/proto-registry';
+import { buildEnvelope } from '../../../src/envelope';
+import { MODE_TASK } from '../../../src/constants';
+
+const registry = new ProtoRegistry();
+
+function makeEnvelope(messageType: string, payload: Record<string, unknown>, sender = 'coordinator') {
+  return buildEnvelope({
+    mode: MODE_TASK,
+    messageType,
+    sessionId: 'test-session',
+    sender,
+    payload: registry.encodeKnownPayload(MODE_TASK, messageType, payload),
+  });
+}
+
+describe('TaskProjection', () => {
+  let projection: TaskProjection;
+
+  beforeEach(() => {
+    projection = new TaskProjection();
+  });
+
+  it('tracks task requests', () => {
+    projection.applyEnvelope(
+      makeEnvelope('TaskRequest', { taskId: 't1', title: 'Build feature', instructions: 'implement it' }),
+      registry,
+    );
+    expect(projection.tasks.size).toBe(1);
+    const task = projection.getTask('t1');
+    expect(task).toMatchObject({ taskId: 't1', title: 'Build feature', status: 'requested', progress: 0 });
+  });
+
+  it('tracks task acceptance', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'worker' }, 'worker'), registry);
+
+    expect(projection.getTask('t1')?.status).toBe('accepted');
+    expect(projection.getTask('t1')?.assignee).toBe('worker');
+    expect(projection.phase).toBe('InProgress');
+  });
+
+  it('tracks task rejection', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(
+      makeEnvelope('TaskReject', { taskId: 't1', assignee: 'worker', reason: 'too busy' }, 'worker'),
+      registry,
+    );
+    expect(projection.getTask('t1')?.status).toBe('rejected');
+  });
+
+  it('tracks progress updates', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+    projection.applyEnvelope(
+      makeEnvelope('TaskUpdate', { taskId: 't1', status: 'working', progress: 0.5, message: 'halfway' }, 'w'),
+      registry,
+    );
+
+    expect(projection.progressOf('t1')).toBe(0.5);
+    expect(projection.getTask('t1')?.status).toBe('in_progress');
+    expect(projection.updates).toHaveLength(1);
+  });
+
+  it('tracks task completion', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+    projection.applyEnvelope(
+      makeEnvelope('TaskComplete', { taskId: 't1', assignee: 'w', summary: 'done' }, 'w'),
+      registry,
+    );
+
+    expect(projection.isComplete('t1')).toBe(true);
+    expect(projection.progressOf('t1')).toBe(1);
+    expect(projection.phase).toBe('Completed');
+    expect(projection.completions).toHaveLength(1);
+  });
+
+  it('tracks task failure', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+    projection.applyEnvelope(
+      makeEnvelope('TaskFail', { taskId: 't1', assignee: 'w', errorCode: 'E1', reason: 'crash', retryable: true }, 'w'),
+      registry,
+    );
+
+    expect(projection.isFailed('t1')).toBe(true);
+    expect(projection.isRetryable('t1')).toBe(true);
+    expect(projection.phase).toBe('Failed');
+  });
+
+  it('non-retryable failure', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+    projection.applyEnvelope(
+      makeEnvelope('TaskFail', { taskId: 't1', assignee: 'w', reason: 'permanent' }, 'w'),
+      registry,
+    );
+    expect(projection.isRetryable('t1')).toBe(false);
+  });
+
+  it('activeTasks filters correctly', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'A', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't2', title: 'B', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+    projection.applyEnvelope(
+      makeEnvelope('TaskComplete', { taskId: 't1', assignee: 'w', summary: 'done' }, 'w'),
+      registry,
+    );
+
+    const active = projection.activeTasks();
+    expect(active).toHaveLength(1);
+    expect(active[0].taskId).toBe('t2');
+  });
+
+  it('progressOf returns 0 for unknown task', () => {
+    expect(projection.progressOf('nope')).toBe(0);
+  });
+});

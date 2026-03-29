@@ -1,0 +1,115 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { HandoffProjection } from '../../../src/projections/handoff';
+import { ProtoRegistry } from '../../../src/proto-registry';
+import { buildEnvelope } from '../../../src/envelope';
+import { MODE_HANDOFF } from '../../../src/constants';
+
+const registry = new ProtoRegistry();
+
+function makeEnvelope(messageType: string, payload: Record<string, unknown>, sender = 'coordinator') {
+  return buildEnvelope({
+    mode: MODE_HANDOFF,
+    messageType,
+    sessionId: 'test-session',
+    sender,
+    payload: registry.encodeKnownPayload(MODE_HANDOFF, messageType, payload),
+  });
+}
+
+describe('HandoffProjection', () => {
+  let projection: HandoffProjection;
+
+  beforeEach(() => {
+    projection = new HandoffProjection();
+  });
+
+  it('tracks handoff offers', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend', reason: 'busy' }),
+      registry,
+    );
+    expect(projection.handoffs.size).toBe(1);
+    expect(projection.getHandoff('h1')).toMatchObject({
+      handoffId: 'h1',
+      targetParticipant: 'bob',
+      scope: 'frontend',
+      status: 'offered',
+    });
+  });
+
+  it('tracks context sharing', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(
+      makeEnvelope('HandoffContext', { handoffId: 'h1', contentType: 'application/json' }),
+      registry,
+    );
+    expect(projection.getHandoff('h1')?.status).toBe('context_sent');
+    expect(projection.getHandoff('h1')?.contextContentType).toBe('application/json');
+    expect(projection.phase).toBe('ContextSharing');
+  });
+
+  it('tracks acceptance', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(
+      makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'),
+      registry,
+    );
+    expect(projection.isAccepted('h1')).toBe(true);
+    expect(projection.getHandoff('h1')?.acceptedBy).toBe('bob');
+    expect(projection.phase).toBe('Resolved');
+  });
+
+  it('tracks decline', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
+      registry,
+    );
+    projection.applyEnvelope(
+      makeEnvelope('HandoffDecline', { handoffId: 'h1', declinedBy: 'bob', reason: 'no capacity' }, 'bob'),
+      registry,
+    );
+    expect(projection.isDeclined('h1')).toBe(true);
+    expect(projection.phase).toBe('Resolved');
+  });
+
+  it('pendingHandoffs filters correctly', () => {
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'a' }),
+      registry,
+    );
+    projection.applyEnvelope(
+      makeEnvelope('HandoffOffer', { handoffId: 'h2', targetParticipant: 'carol', scope: 'b' }),
+      registry,
+    );
+    projection.applyEnvelope(
+      makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'),
+      registry,
+    );
+
+    const pending = projection.pendingHandoffs();
+    expect(pending).toHaveLength(1);
+    expect(pending[0].handoffId).toBe('h2');
+  });
+
+  it('commitment transitions to Committed', () => {
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'handoff.accepted',
+        authorityScope: 'team',
+        reason: 'transferred',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+      }),
+      registry,
+    );
+    expect(projection.phase).toBe('Committed');
+    expect(projection.commitment).toBeDefined();
+  });
+});
