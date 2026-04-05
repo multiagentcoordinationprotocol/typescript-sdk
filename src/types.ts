@@ -32,6 +32,12 @@ export interface Ack {
   error?: MacpErrorShape;
 }
 
+export interface ParticipantActivity {
+  participantId: string;
+  lastMessageAtUnixMs: string;
+  messageCount: number;
+}
+
 export interface SessionMetadata {
   sessionId?: string;
   mode?: string;
@@ -41,6 +47,8 @@ export interface SessionMetadata {
   modeVersion?: string;
   configurationVersion?: string;
   policyVersion?: string;
+  participants?: string[];
+  participantActivity?: ParticipantActivity[];
 }
 
 export interface ModeDescriptor {
