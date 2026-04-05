@@ -290,6 +290,12 @@ export class MacpClient {
     return metadata ? (this.client as any).WatchRoots({}, metadata) : (this.client as any).WatchRoots({});
   }
 
+  /** @internal Used by SignalWatcher */
+  _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    const metadata = this.metadata(auth);
+    return metadata ? (this.client as any).WatchSignals({}, metadata) : (this.client as any).WatchSignals({});
+  }
+
   senderHint(auth?: AuthConfig): string | undefined {
     return authSender(auth ?? this.auth);
   }

@@ -1,7 +1,7 @@
 import type * as grpc from '@grpc/grpc-js';
 import type { AuthConfig } from './auth';
 import type { MacpClient } from './client';
-import type { RegistryChanged, RootsChanged } from './types';
+import type { Envelope, RegistryChanged, RootsChanged } from './types';
 
 function serverStreamToAsyncGenerator<T>(stream: grpc.ClientReadableStream<T>): AsyncGenerator<T, void, void> {
   const queue: Array<{ value: T } | { error: Error } | { done: true }> = [];
@@ -121,6 +121,43 @@ export class RootsWatcher {
     const result = await gen.next();
     await gen.return(undefined as never);
     if (result.done) throw new Error('stream ended before receiving a change');
+    return result.value;
+  }
+}
+
+export class SignalWatcher {
+  private readonly client: MacpClient;
+  private readonly auth?: AuthConfig;
+
+  constructor(client: MacpClient, options?: { auth?: AuthConfig }) {
+    this.client = client;
+    this.auth = options?.auth;
+  }
+
+  async *signals(signal?: AbortSignal): AsyncGenerator<Envelope, void, void> {
+    const stream = (
+      this.client as unknown as { _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<{ envelope?: Envelope }> }
+    )._watchSignals(this.auth);
+    if (signal) {
+      signal.addEventListener('abort', () => stream.cancel(), { once: true });
+    }
+    const gen = serverStreamToAsyncGenerator(stream);
+    for await (const response of gen) {
+      if (response.envelope) yield response.envelope;
+    }
+  }
+
+  async watch(handler: (envelope: Envelope) => void | Promise<void>): Promise<void> {
+    for await (const envelope of this.signals()) {
+      await handler(envelope);
+    }
+  }
+
+  async nextSignal(): Promise<Envelope> {
+    const gen = this.signals();
+    const result = await gen.next();
+    await gen.return(undefined as never);
+    if (result.done) throw new Error('stream ended before receiving a signal');
     return result.value;
   }
 }
