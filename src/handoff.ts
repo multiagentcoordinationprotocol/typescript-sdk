@@ -1,11 +1,6 @@
 import { authSender, type AuthConfig } from './auth';
 import type { MacpClient } from './client';
-import {
-  DEFAULT_CONFIGURATION_VERSION,
-  DEFAULT_MODE_VERSION,
-  DEFAULT_POLICY_VERSION,
-  MODE_HANDOFF,
-} from './constants';
+import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_HANDOFF } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { HandoffProjection } from './projections/handoff';
 import type {

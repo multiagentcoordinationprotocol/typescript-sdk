@@ -281,9 +281,7 @@ export class MacpClient {
   /** @internal Used by ModeRegistryWatcher */
   _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
-    return metadata
-      ? (this.client as any).WatchModeRegistry({}, metadata)
-      : (this.client as any).WatchModeRegistry({});
+    return metadata ? (this.client as any).WatchModeRegistry({}, metadata) : (this.client as any).WatchModeRegistry({});
   }
 
   /** @internal Used by RootsWatcher */
