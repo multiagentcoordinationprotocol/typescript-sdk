@@ -39,10 +39,7 @@ describe('ProposalProjection', () => {
   });
 
   it('tracks counter-proposals with supersedes link', () => {
-    projection.applyEnvelope(
-      makeEnvelope('Proposal', { proposalId: 'p1', title: 'Plan A' }),
-      registry,
-    );
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'Plan A' }), registry);
     projection.applyEnvelope(
       makeEnvelope('CounterProposal', { proposalId: 'p2', supersedesProposalId: 'p1', title: 'Plan B' }, 'bob'),
       registry,

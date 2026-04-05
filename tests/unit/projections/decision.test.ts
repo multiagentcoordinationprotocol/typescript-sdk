@@ -39,12 +39,13 @@ describe('DecisionProjection', () => {
   });
 
   it('tracks evaluations', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'opt' }), registry);
     projection.applyEnvelope(
-      makeEnvelope('Proposal', { proposalId: 'p1', option: 'opt' }),
-      registry,
-    );
-    projection.applyEnvelope(
-      makeEnvelope('Evaluation', { proposalId: 'p1', recommendation: 'approve', confidence: 0.9, reason: 'good' }, 'bob'),
+      makeEnvelope(
+        'Evaluation',
+        { proposalId: 'p1', recommendation: 'approve', confidence: 0.9, reason: 'good' },
+        'bob',
+      ),
       registry,
     );
     expect(projection.evaluations).toHaveLength(1);
@@ -56,10 +57,7 @@ describe('DecisionProjection', () => {
   });
 
   it('tracks objections with severity', () => {
-    projection.applyEnvelope(
-      makeEnvelope('Proposal', { proposalId: 'p1', option: 'opt' }),
-      registry,
-    );
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'opt' }), registry);
     projection.applyEnvelope(
       makeEnvelope('Objection', { proposalId: 'p1', reason: 'risky', severity: 'critical' }, 'bob'),
       registry,
@@ -70,14 +68,8 @@ describe('DecisionProjection', () => {
   });
 
   it('defaults objection severity to medium', () => {
-    projection.applyEnvelope(
-      makeEnvelope('Proposal', { proposalId: 'p1', option: 'opt' }),
-      registry,
-    );
-    projection.applyEnvelope(
-      makeEnvelope('Objection', { proposalId: 'p1', reason: 'minor issue' }, 'bob'),
-      registry,
-    );
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'opt' }), registry);
+    projection.applyEnvelope(makeEnvelope('Objection', { proposalId: 'p1', reason: 'minor issue' }, 'bob'), registry);
     expect(projection.objections[0].severity).toBe('medium');
     expect(projection.hasBlockingObjection('p1')).toBe(false);
   });

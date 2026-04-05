@@ -67,7 +67,9 @@ export class ModeRegistryWatcher {
   }
 
   async *changes(signal?: AbortSignal): AsyncGenerator<RegistryChanged, void, void> {
-    const stream = (this.client as unknown as { _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<RegistryChanged> })._watchModeRegistry(this.auth);
+    const stream = (
+      this.client as unknown as { _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<RegistryChanged> }
+    )._watchModeRegistry(this.auth);
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
     }
@@ -99,7 +101,9 @@ export class RootsWatcher {
   }
 
   async *changes(signal?: AbortSignal): AsyncGenerator<RootsChanged, void, void> {
-    const stream = (this.client as unknown as { _watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<RootsChanged> })._watchRoots(this.auth);
+    const stream = (
+      this.client as unknown as { _watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<RootsChanged> }
+    )._watchRoots(this.auth);
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
     }

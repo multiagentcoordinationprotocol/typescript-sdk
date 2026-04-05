@@ -76,7 +76,12 @@ export class ProposalProjection {
       case 'Reject': {
         const record = payload as { proposalId: string; terminal?: boolean; reason?: string };
         const terminal = record.terminal ?? false;
-        this.rejections.push({ proposalId: record.proposalId, terminal, reason: record.reason, sender: envelope.sender });
+        this.rejections.push({
+          proposalId: record.proposalId,
+          terminal,
+          reason: record.reason,
+          sender: envelope.sender,
+        });
         if (terminal) {
           const proposal = this.proposals.get(record.proposalId);
           if (proposal) proposal.status = 'rejected';

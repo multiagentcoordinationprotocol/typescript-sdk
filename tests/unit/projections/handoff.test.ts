@@ -56,10 +56,7 @@ describe('HandoffProjection', () => {
       makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' }),
       registry,
     );
-    projection.applyEnvelope(
-      makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'),
-      registry,
-    );
+    projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
     expect(projection.isAccepted('h1')).toBe(true);
     expect(projection.getHandoff('h1')?.acceptedBy).toBe('bob');
     expect(projection.phase).toBe('Resolved');
@@ -87,10 +84,7 @@ describe('HandoffProjection', () => {
       makeEnvelope('HandoffOffer', { handoffId: 'h2', targetParticipant: 'carol', scope: 'b' }),
       registry,
     );
-    projection.applyEnvelope(
-      makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'),
-      registry,
-    );
+    projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
 
     const pending = projection.pendingHandoffs();
     expect(pending).toHaveLength(1);

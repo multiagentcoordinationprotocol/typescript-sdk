@@ -1,11 +1,6 @@
 import { authSender, type AuthConfig } from './auth';
 import type { MacpClient } from './client';
-import {
-  DEFAULT_CONFIGURATION_VERSION,
-  DEFAULT_MODE_VERSION,
-  DEFAULT_POLICY_VERSION,
-  MODE_TASK,
-} from './constants';
+import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_TASK } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { TaskProjection } from './projections/task';
 import type {

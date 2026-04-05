@@ -27,7 +27,9 @@ describe('ProtoRegistry', () => {
 
     it('resolves proposal mode types', () => {
       expect(registry.getKnownTypeName(MODE_PROPOSAL, 'Proposal')).toBe('macp.modes.proposal.v1.ProposalPayload');
-      expect(registry.getKnownTypeName(MODE_PROPOSAL, 'CounterProposal')).toBe('macp.modes.proposal.v1.CounterProposalPayload');
+      expect(registry.getKnownTypeName(MODE_PROPOSAL, 'CounterProposal')).toBe(
+        'macp.modes.proposal.v1.CounterProposalPayload',
+      );
     });
 
     it('resolves task mode types', () => {
@@ -37,11 +39,15 @@ describe('ProtoRegistry', () => {
 
     it('resolves handoff mode types', () => {
       expect(registry.getKnownTypeName(MODE_HANDOFF, 'HandoffOffer')).toBe('macp.modes.handoff.v1.HandoffOfferPayload');
-      expect(registry.getKnownTypeName(MODE_HANDOFF, 'HandoffAccept')).toBe('macp.modes.handoff.v1.HandoffAcceptPayload');
+      expect(registry.getKnownTypeName(MODE_HANDOFF, 'HandoffAccept')).toBe(
+        'macp.modes.handoff.v1.HandoffAcceptPayload',
+      );
     });
 
     it('resolves quorum mode types', () => {
-      expect(registry.getKnownTypeName(MODE_QUORUM, 'ApprovalRequest')).toBe('macp.modes.quorum.v1.ApprovalRequestPayload');
+      expect(registry.getKnownTypeName(MODE_QUORUM, 'ApprovalRequest')).toBe(
+        'macp.modes.quorum.v1.ApprovalRequestPayload',
+      );
       expect(registry.getKnownTypeName(MODE_QUORUM, 'Approve')).toBe('macp.modes.quorum.v1.ApprovePayload');
     });
 
@@ -57,11 +63,19 @@ describe('ProtoRegistry', () => {
   describe('encode/decode roundtrip', () => {
     const roundtrips: Array<{ mode: string; type: string; payload: Record<string, unknown> }> = [
       { mode: MODE_DECISION, type: 'Proposal', payload: { proposalId: 'p1', option: 'deploy', rationale: 'ready' } },
-      { mode: MODE_DECISION, type: 'Evaluation', payload: { proposalId: 'p1', recommendation: 'approve', confidence: 0.95 } },
+      {
+        mode: MODE_DECISION,
+        type: 'Evaluation',
+        payload: { proposalId: 'p1', recommendation: 'approve', confidence: 0.95 },
+      },
       { mode: MODE_DECISION, type: 'Objection', payload: { proposalId: 'p1', reason: 'risk', severity: 'high' } },
       { mode: MODE_DECISION, type: 'Vote', payload: { proposalId: 'p1', vote: 'approve', reason: 'ok' } },
       { mode: MODE_PROPOSAL, type: 'Proposal', payload: { proposalId: 'p1', title: 'Plan A', summary: 'do it' } },
-      { mode: MODE_PROPOSAL, type: 'CounterProposal', payload: { proposalId: 'p2', supersedesProposalId: 'p1', title: 'Plan B' } },
+      {
+        mode: MODE_PROPOSAL,
+        type: 'CounterProposal',
+        payload: { proposalId: 'p2', supersedesProposalId: 'p1', title: 'Plan B' },
+      },
       { mode: MODE_PROPOSAL, type: 'Accept', payload: { proposalId: 'p1', reason: 'yes' } },
       { mode: MODE_PROPOSAL, type: 'Reject', payload: { proposalId: 'p1', terminal: true, reason: 'no' } },
       { mode: MODE_PROPOSAL, type: 'Withdraw', payload: { proposalId: 'p1', reason: 'changed mind' } },
@@ -69,11 +83,19 @@ describe('ProtoRegistry', () => {
       { mode: MODE_TASK, type: 'TaskAccept', payload: { taskId: 't1', assignee: 'w' } },
       { mode: MODE_TASK, type: 'TaskComplete', payload: { taskId: 't1', assignee: 'w', summary: 'done' } },
       { mode: MODE_TASK, type: 'TaskFail', payload: { taskId: 't1', assignee: 'w', errorCode: 'E1', retryable: true } },
-      { mode: MODE_HANDOFF, type: 'HandoffOffer', payload: { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' } },
+      {
+        mode: MODE_HANDOFF,
+        type: 'HandoffOffer',
+        payload: { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' },
+      },
       { mode: MODE_HANDOFF, type: 'HandoffContext', payload: { handoffId: 'h1', contentType: 'application/json' } },
       { mode: MODE_HANDOFF, type: 'HandoffAccept', payload: { handoffId: 'h1', acceptedBy: 'bob' } },
       { mode: MODE_HANDOFF, type: 'HandoffDecline', payload: { handoffId: 'h1', declinedBy: 'bob', reason: 'busy' } },
-      { mode: MODE_QUORUM, type: 'ApprovalRequest', payload: { requestId: 'r1', action: 'deploy', summary: 'v2', requiredApprovals: 2 } },
+      {
+        mode: MODE_QUORUM,
+        type: 'ApprovalRequest',
+        payload: { requestId: 'r1', action: 'deploy', summary: 'v2', requiredApprovals: 2 },
+      },
       { mode: MODE_QUORUM, type: 'Approve', payload: { requestId: 'r1', reason: 'ok' } },
       { mode: MODE_QUORUM, type: 'Reject', payload: { requestId: 'r1', reason: 'no' } },
       { mode: MODE_QUORUM, type: 'Abstain', payload: { requestId: 'r1', reason: 'neutral' } },
