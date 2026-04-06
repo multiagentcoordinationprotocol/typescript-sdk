@@ -281,6 +281,15 @@ export interface AbstainPayload {
   reason?: string;
 }
 
+export interface PolicyDescriptor {
+  policy_id: string;
+  mode: string;
+  description: string;
+  rules: Buffer | Uint8Array;
+  schema_version: number;
+  registered_at?: string;
+}
+
 export interface RegistryChanged {
   registry: string;
   observedAtUnixMs: string;

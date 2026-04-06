@@ -8,8 +8,7 @@
   "types": "dist/index.d.ts",
   "sideEffects": false,
   "files": [
-    "dist",
-    "proto"
+    "dist"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -37,6 +36,7 @@
     "url": "https://github.com/multiagentcoordinationprotocol/typescript-sdk.git"
   },
   "dependencies": {
+    "@macp/proto": "^0.1.0",
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",
     "protobufjs": "^8.0.0"

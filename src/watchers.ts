@@ -1,7 +1,7 @@
 import type * as grpc from '@grpc/grpc-js';
 import type { AuthConfig } from './auth';
 import type { MacpClient } from './client';
-import type { Envelope, RegistryChanged, RootsChanged } from './types';
+import type { Envelope, PolicyDescriptor, RegistryChanged, RootsChanged } from './types';
 
 function serverStreamToAsyncGenerator<T>(stream: grpc.ClientReadableStream<T>): AsyncGenerator<T, void, void> {
   const queue: Array<{ value: T } | { error: Error } | { done: true }> = [];
@@ -158,6 +158,45 @@ export class SignalWatcher {
     const result = await gen.next();
     await gen.return(undefined as never);
     if (result.done) throw new Error('stream ended before receiving a signal');
+    return result.value;
+  }
+}
+
+export interface PolicyChange {
+  descriptors: PolicyDescriptor[];
+  observedAtUnixMs: string;
+}
+
+export class PolicyWatcher {
+  private readonly client: MacpClient;
+  private readonly auth?: AuthConfig;
+
+  constructor(client: MacpClient, options?: { auth?: AuthConfig }) {
+    this.client = client;
+    this.auth = options?.auth;
+  }
+
+  async *changes(signal?: AbortSignal): AsyncGenerator<PolicyChange, void, void> {
+    const stream = (
+      this.client as unknown as { _watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<PolicyChange> }
+    )._watchPolicies(this.auth);
+    if (signal) {
+      signal.addEventListener('abort', () => stream.cancel(), { once: true });
+    }
+    yield* serverStreamToAsyncGenerator(stream);
+  }
+
+  async watch(handler: (change: PolicyChange) => void | Promise<void>): Promise<void> {
+    for await (const change of this.changes()) {
+      await handler(change);
+    }
+  }
+
+  async nextChange(): Promise<PolicyChange> {
+    const gen = this.changes();
+    const result = await gen.next();
+    await gen.return(undefined as never);
+    if (result.done) throw new Error('stream ended before receiving a policy change');
     return result.value;
   }
 }

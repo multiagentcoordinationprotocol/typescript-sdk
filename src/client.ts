@@ -2,9 +2,19 @@ import * as path from 'node:path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { authSender, type AuthConfig, metadataFromAuth } from './auth';
+import { buildEnvelope } from './envelope';
 import { MacpAckError, MacpSdkError, MacpTransportError } from './errors';
 import { ProtoRegistry } from './proto-registry';
-import type { Ack, AgentManifest, Envelope, InitializeResult, ModeDescriptor, SessionMetadata, Root } from './types';
+import type {
+  Ack,
+  AgentManifest,
+  Envelope,
+  InitializeResult,
+  ModeDescriptor,
+  PolicyDescriptor,
+  SessionMetadata,
+  Root,
+} from './types';
 
 interface MacpClientOptions {
   address: string;
@@ -95,10 +105,16 @@ export class MacpClient {
     this.defaultDeadlineMs = options.defaultDeadlineMs;
     this.clientName = options.clientName ?? 'macp-sdk-typescript';
     this.clientVersion = options.clientVersion ?? '0.1.0';
-    const protoDir = options.protoDir ?? path.resolve(__dirname, '..', 'proto');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { protoDir: defaultProtoDir } = require('@macp/proto');
+    const protoDir = options.protoDir ?? defaultProtoDir;
     this.protoRegistry = new ProtoRegistry(protoDir);
     const packageDefinition = protoLoader.loadSync(
-      [path.join(protoDir, 'macp/v1/core.proto'), path.join(protoDir, 'macp/v1/envelope.proto')],
+      [
+        path.join(protoDir, 'macp/v1/core.proto'),
+        path.join(protoDir, 'macp/v1/envelope.proto'),
+        path.join(protoDir, 'macp/v1/policy.proto'),
+      ],
       {
         keepCase: false,
         longs: String,
@@ -171,6 +187,7 @@ export class MacpClient {
           manifest: { getManifest: true },
           modeRegistry: { listModes: true, listChanged: true },
           roots: { listRoots: true, listChanged: true },
+          policyRegistry: { registerPolicy: true, listPolicies: true, listChanged: true },
           experimental: { features: {} },
         },
       },
@@ -271,6 +288,56 @@ export class MacpClient {
     }>;
   }
 
+  async registerPolicy(
+    descriptor: PolicyDescriptor,
+    options?: { auth?: AuthConfig; deadlineMs?: number },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const auth = this.requireAuth(options?.auth);
+    return this.unary('RegisterPolicy', { descriptor }, auth, options?.deadlineMs) as Promise<{
+      ok: boolean;
+      error?: string;
+    }>;
+  }
+
+  async unregisterPolicy(
+    policyId: string,
+    options?: { auth?: AuthConfig; deadlineMs?: number },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const auth = this.requireAuth(options?.auth);
+    return this.unary('UnregisterPolicy', { policyId }, auth, options?.deadlineMs) as Promise<{
+      ok: boolean;
+      error?: string;
+    }>;
+  }
+
+  async getPolicy(policyId: string, options?: { auth?: AuthConfig; deadlineMs?: number }): Promise<PolicyDescriptor> {
+    const auth = this.requireAuth(options?.auth);
+    const res = await this.unary<{ policyId: string }, { descriptor: PolicyDescriptor }>(
+      'GetPolicy',
+      { policyId },
+      auth,
+      options?.deadlineMs,
+    );
+    return res.descriptor;
+  }
+
+  async listPolicies(mode?: string, options?: { auth?: AuthConfig; deadlineMs?: number }): Promise<PolicyDescriptor[]> {
+    const auth = this.requireAuth(options?.auth);
+    const res = await this.unary<{ mode: string }, { descriptors?: PolicyDescriptor[] }>(
+      'ListPolicies',
+      { mode: mode || '' },
+      auth,
+      options?.deadlineMs,
+    );
+    return res.descriptors || [];
+  }
+
+  /** @internal Used by PolicyWatcher */
+  _watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    const metadata = this.metadata(auth);
+    return metadata ? (this.client as any).WatchPolicies({}, metadata) : (this.client as any).WatchPolicies({});
+  }
+
   openStream(options?: { auth?: AuthConfig }): MacpStream {
     const auth = this.requireAuth(options?.auth);
     const metadata = this.metadata(auth) as grpc.Metadata;
@@ -294,6 +361,62 @@ export class MacpClient {
   _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchSignals({}, metadata) : (this.client as any).WatchSignals({});
+  }
+
+  async sendSignal(options: {
+    signalType: string;
+    data?: Buffer;
+    confidence?: number;
+    correlationSessionId?: string;
+    sender?: string;
+    auth?: AuthConfig;
+    deadlineMs?: number;
+  }): Promise<Ack> {
+    const auth = this.requireAuth(options.auth);
+    const payload = this.protoRegistry.encodeKnownPayload('', 'Signal', {
+      signalType: options.signalType,
+      data: options.data ?? Buffer.alloc(0),
+      confidence: options.confidence ?? 0,
+      correlationSessionId: options.correlationSessionId ?? '',
+    });
+    const envelope = buildEnvelope({
+      mode: '',
+      messageType: 'Signal',
+      sessionId: '',
+      sender: options.sender ?? this.senderHint(auth) ?? '',
+      payload,
+    });
+    return this.send(envelope, { auth, deadlineMs: options.deadlineMs });
+  }
+
+  async sendProgress(options: {
+    sessionId: string;
+    mode: string;
+    progressToken: string;
+    progress: number;
+    total: number;
+    message?: string;
+    targetMessageId?: string;
+    sender?: string;
+    auth?: AuthConfig;
+    deadlineMs?: number;
+  }): Promise<Ack> {
+    const auth = this.requireAuth(options.auth);
+    const payload = this.protoRegistry.encodeKnownPayload('', 'Progress', {
+      progressToken: options.progressToken,
+      progress: options.progress,
+      total: options.total,
+      message: options.message ?? '',
+      targetMessageId: options.targetMessageId ?? '',
+    });
+    const envelope = buildEnvelope({
+      mode: options.mode,
+      messageType: 'Progress',
+      sessionId: options.sessionId,
+      sender: options.sender ?? this.senderHint(auth) ?? '',
+      payload,
+    });
+    return this.send(envelope, { auth, deadlineMs: options.deadlineMs });
   }
 
   senderHint(auth?: AuthConfig): string | undefined {

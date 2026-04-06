@@ -23,3 +23,24 @@ export class MacpAckError extends MacpSdkError {
     this.ack = ack;
   }
 }
+
+export class MacpSessionError extends MacpSdkError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MacpSessionError';
+  }
+}
+
+export class MacpTimeoutError extends MacpTransportError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MacpTimeoutError';
+  }
+}
+
+export class MacpRetryError extends MacpTransportError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MacpRetryError';
+  }
+}

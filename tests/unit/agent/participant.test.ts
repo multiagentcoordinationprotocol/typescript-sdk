@@ -1,0 +1,351 @@
+import { describe, it, expect, vi } from 'vitest';
+import { Participant, type ParticipantConfig } from '../../../src/agent/participant';
+import type { TransportAdapter } from '../../../src/agent/transports';
+import type { IncomingMessage } from '../../../src/agent/types';
+import { MODE_DECISION, MODE_PROPOSAL, MODE_TASK, MODE_HANDOFF, MODE_QUORUM } from '../../../src/constants';
+import type { Envelope } from '../../../src/types';
+
+function makeMockClient(): any {
+  return {
+    auth: { agentId: 'test-agent', senderHint: 'test-agent' },
+    protoRegistry: {
+      encodeKnownPayload: vi.fn(() => Buffer.alloc(0)),
+      decodeKnownPayload: vi.fn(() => ({})),
+    },
+    send: vi.fn().mockResolvedValue({ ok: true }),
+    openStream: vi.fn(),
+    getSession: vi.fn(),
+  };
+}
+
+function makeMockTransport(messages: IncomingMessage[]): TransportAdapter {
+  let stopped = false;
+  return {
+    async *start() {
+      for (const msg of messages) {
+        if (stopped) break;
+        yield msg;
+      }
+    },
+    async stop() {
+      stopped = true;
+    },
+  };
+}
+
+function makeIncomingMessage(messageType: string, payload: Record<string, unknown> = {}): IncomingMessage {
+  return {
+    messageType,
+    sender: 'agent-a',
+    payload,
+    raw: {
+      macpVersion: '1.0',
+      mode: MODE_DECISION,
+      messageType,
+      messageId: 'msg-1',
+      sessionId: 'session-1',
+      sender: 'agent-a',
+      timestampUnixMs: String(Date.now()),
+      payload: Buffer.alloc(0),
+    },
+    seq: 0,
+  };
+}
+
+describe('Participant', () => {
+  describe('construction', () => {
+    it('creates with decision mode', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+
+      expect(participant.participantId).toBe('agent-1');
+      expect(participant.sessionId).toBe('session-1');
+      expect(participant.mode).toBe(MODE_DECISION);
+      expect(participant.projection).toBeDefined();
+      expect(participant.actions).toBeDefined();
+    });
+
+    it('creates with proposal mode', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_PROPOSAL,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.mode).toBe(MODE_PROPOSAL);
+    });
+
+    it('creates with task mode', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_TASK,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.mode).toBe(MODE_TASK);
+    });
+
+    it('creates with handoff mode', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_HANDOFF,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.mode).toBe(MODE_HANDOFF);
+    });
+
+    it('creates with quorum mode', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_QUORUM,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.mode).toBe(MODE_QUORUM);
+    });
+
+    it('creates with unknown mode', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: 'ext.custom.v1',
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.mode).toBe('ext.custom.v1');
+      expect(participant.projection).toBeDefined();
+    });
+  });
+
+  describe('handler registration', () => {
+    it('supports fluent API for on()', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+
+      const result = participant.on('Proposal', vi.fn());
+      expect(result).toBe(participant);
+    });
+
+    it('supports fluent API for onPhaseChange()', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+
+      const result = participant.onPhaseChange('Voting', vi.fn());
+      expect(result).toBe(participant);
+    });
+
+    it('supports fluent API for onTerminal()', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+
+      const result = participant.onTerminal(vi.fn());
+      expect(result).toBe(participant);
+    });
+  });
+
+  describe('run()', () => {
+    it('dispatches incoming messages to handlers', async () => {
+      const client = makeMockClient();
+      const handler = vi.fn();
+
+      const messages = [makeIncomingMessage('Proposal', { proposalId: 'p1', option: 'opt-a' })];
+      const transport = makeMockTransport(messages);
+
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport,
+      });
+
+      participant.on('Proposal', handler);
+      await participant.run();
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'Proposal' }),
+        expect.objectContaining({
+          participant: expect.objectContaining({ participantId: 'agent-1' }),
+          actions: expect.any(Object),
+          session: expect.objectContaining({ sessionId: 'session-1' }),
+        }),
+      );
+    });
+
+    it('processes multiple messages', async () => {
+      const client = makeMockClient();
+      const proposalHandler = vi.fn();
+      const evaluationHandler = vi.fn();
+
+      const messages = [
+        makeIncomingMessage('Proposal', { proposalId: 'p1', option: 'opt-a' }),
+        makeIncomingMessage('Evaluation', { proposalId: 'p1', recommendation: 'approve', confidence: 0.9 }),
+      ];
+      const transport = makeMockTransport(messages);
+
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport,
+      });
+
+      participant.on('Proposal', proposalHandler);
+      participant.on('Evaluation', evaluationHandler);
+      await participant.run();
+
+      expect(proposalHandler).toHaveBeenCalledOnce();
+      expect(evaluationHandler).toHaveBeenCalledOnce();
+    });
+
+    it('does not dispatch to unregistered handlers', async () => {
+      const client = makeMockClient();
+      const handler = vi.fn();
+
+      const messages = [makeIncomingMessage('Vote')];
+      const transport = makeMockTransport(messages);
+
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport,
+      });
+
+      participant.on('Proposal', handler);
+      await participant.run();
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('stop()', () => {
+    it('stops the transport', async () => {
+      const client = makeMockClient();
+      const transport = makeMockTransport([]);
+      const stopSpy = vi.spyOn(transport, 'stop');
+
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport,
+      });
+
+      await participant.stop();
+      expect(stopSpy).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('actions (decision mode)', () => {
+    it('provides evaluate action', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.actions.evaluate).toBeDefined();
+    });
+
+    it('provides vote action', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.actions.vote).toBeDefined();
+    });
+
+    it('provides propose action', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.actions.propose).toBeDefined();
+    });
+
+    it('provides commit action', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.actions.commit).toBeDefined();
+    });
+
+    it('provides raiseObjection action', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.actions.raiseObjection).toBeDefined();
+    });
+
+    it('provides send action', () => {
+      const client = makeMockClient();
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: 'session-1',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+      });
+      expect(participant.actions.send).toBeDefined();
+    });
+  });
+});
