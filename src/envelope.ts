@@ -47,6 +47,14 @@ export function buildSessionStartPayload(input: {
   };
 }
 
+const NEGATIVE_SUFFIXES = ['rejected', 'failed', 'declined'];
+
+export function inferOutcomePositive(action: string): boolean {
+  const lower = action.toLowerCase();
+  if (NEGATIVE_SUFFIXES.some((s) => lower.endsWith(s))) return false;
+  return true;
+}
+
 export function buildCommitmentPayload(input: {
   action: string;
   authorityScope: string;
@@ -55,6 +63,7 @@ export function buildCommitmentPayload(input: {
   modeVersion?: string;
   configurationVersion?: string;
   policyVersion?: string;
+  outcomePositive?: boolean;
 }): CommitmentPayload {
   return {
     commitmentId: input.commitmentId ?? newCommitmentId(),
@@ -64,6 +73,7 @@ export function buildCommitmentPayload(input: {
     modeVersion: input.modeVersion ?? DEFAULT_MODE_VERSION,
     configurationVersion: input.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION,
     policyVersion: input.policyVersion ?? DEFAULT_POLICY_VERSION,
+    outcomePositive: input.outcomePositive ?? inferOutcomePositive(input.action),
   };
 }
 

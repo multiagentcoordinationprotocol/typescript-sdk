@@ -10,3 +10,7 @@ export const MODE_TASK = 'macp.mode.task.v1';
 export const MODE_HANDOFF = 'macp.mode.handoff.v1';
 export const MODE_QUORUM = 'macp.mode.quorum.v1';
 export const MODE_MULTI_ROUND = 'ext.multi_round.v1';
+
+export const ERR_SESSION_ALREADY_EXISTS = 'SESSION_ALREADY_EXISTS';
+export const ERR_UNKNOWN_POLICY_VERSION = 'UNKNOWN_POLICY_VERSION';
+export const ERR_INVALID_POLICY_DEFINITION = 'INVALID_POLICY_DEFINITION';

@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Auth } from '../auth';
 import { MacpClient } from '../client';
+import { DEFAULT_POLICY_VERSION } from '../constants';
 import { Participant, type ParticipantConfig } from './participant';
 
 export interface BootstrapPayload {
@@ -55,7 +56,7 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
     auth,
     modeVersion: payload.mode_version,
     configurationVersion: payload.configuration_version,
-    policyVersion: payload.policy_version,
+    policyVersion: payload.policy_version ?? DEFAULT_POLICY_VERSION,
   };
 
   return new Participant(config);

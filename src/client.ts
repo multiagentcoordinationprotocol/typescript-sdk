@@ -5,6 +5,7 @@ import { authSender, type AuthConfig, metadataFromAuth } from './auth';
 import { buildEnvelope } from './envelope';
 import { MacpAckError, MacpSdkError, MacpTransportError } from './errors';
 import { ProtoRegistry } from './proto-registry';
+import { validateSignalType } from './validation';
 import type {
   Ack,
   AgentManifest,
@@ -48,13 +49,23 @@ const STREAM_END = Symbol('stream-end');
 
 type StreamItem = Envelope | Error | typeof STREAM_END;
 
+export type InlineErrorCallback = (error: { code?: string; message?: string }) => void;
+
 export class MacpStream {
   private readonly queue = new AsyncQueue<StreamItem>();
   private closed = false;
+  private readonly inlineErrorCallbacks: InlineErrorCallback[] = [];
 
   constructor(private readonly call: grpc.ClientDuplexStream<any, any>) {
-    call.on('data', (chunk: { envelope?: Envelope }) => {
-      if (chunk?.envelope) this.queue.push(chunk.envelope);
+    call.on('data', (chunk: any) => {
+      // Support both old format (chunk.envelope) and new oneof format (chunk.response.envelope)
+      const envelope = chunk?.response?.envelope ?? chunk?.envelope;
+      if (envelope) {
+        this.queue.push(envelope);
+      } else if (chunk?.response?.error) {
+        // Inline application-level error — stream stays open
+        for (const cb of this.inlineErrorCallbacks) cb(chunk.response.error);
+      }
     });
     call.on('error', (error: grpc.ServiceError) => {
       this.queue.push(new MacpTransportError(error.details || error.message));
@@ -62,6 +73,10 @@ export class MacpStream {
     call.on('end', () => {
       this.queue.push(STREAM_END);
     });
+  }
+
+  onInlineError(callback: InlineErrorCallback): void {
+    this.inlineErrorCallbacks.push(callback);
   }
 
   send(envelope: Envelope): Promise<void> {
@@ -208,6 +223,8 @@ export class MacpClient {
       options?.deadlineMs,
     );
     const ack = response.ack;
+    // Duplicate acks are success — the message was already accepted
+    if (ack?.duplicate) return ack;
     if (options?.raiseOnNack !== false && !ack?.ok) throw new MacpAckError(ack ?? {});
     return ack;
   }
@@ -372,6 +389,7 @@ export class MacpClient {
     auth?: AuthConfig;
     deadlineMs?: number;
   }): Promise<Ack> {
+    validateSignalType(options.signalType, options.data);
     const auth = this.requireAuth(options.auth);
     const payload = this.protoRegistry.encodeKnownPayload('', 'Signal', {
       signalType: options.signalType,
@@ -390,8 +408,8 @@ export class MacpClient {
   }
 
   async sendProgress(options: {
-    sessionId: string;
-    mode: string;
+    sessionId?: string;
+    mode?: string;
     progressToken: string;
     progress: number;
     total: number;
@@ -410,9 +428,9 @@ export class MacpClient {
       targetMessageId: options.targetMessageId ?? '',
     });
     const envelope = buildEnvelope({
-      mode: options.mode,
+      mode: options.mode ?? '',
       messageType: 'Progress',
-      sessionId: options.sessionId,
+      sessionId: options.sessionId ?? '',
       sender: options.sender ?? this.senderHint(auth) ?? '',
       payload,
     });

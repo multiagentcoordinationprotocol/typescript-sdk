@@ -3,6 +3,7 @@ import type { MacpClient } from './client';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_HANDOFF } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { HandoffProjection } from './projections/handoff';
+import { validateParticipantCount, validateSessionId } from './validation';
 import type {
   Ack,
   Envelope,
@@ -32,6 +33,7 @@ export class HandoffSession {
 
   constructor(client: MacpClient, options: HandoffSessionOptions = {}) {
     this.client = client;
+    if (options.sessionId) validateSessionId(options.sessionId);
     this.sessionId = options.sessionId ?? newSessionId();
     this.modeVersion = options.modeVersion ?? DEFAULT_MODE_VERSION;
     this.configurationVersion = options.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION;
@@ -57,6 +59,7 @@ export class HandoffSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
+    validateParticipantCount(input.participants.length);
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -146,6 +149,7 @@ export class HandoffSession {
     authorityScope: string;
     reason: string;
     commitmentId?: string;
+    outcomePositive?: boolean;
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
@@ -154,6 +158,7 @@ export class HandoffSession {
       authorityScope: input.authorityScope,
       reason: input.reason,
       commitmentId: input.commitmentId,
+      outcomePositive: input.outcomePositive,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,

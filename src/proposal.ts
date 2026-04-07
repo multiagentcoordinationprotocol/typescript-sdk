@@ -7,7 +7,9 @@ import {
   MODE_PROPOSAL,
 } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
+import { MacpSessionError } from './errors';
 import { ProposalProjection } from './projections/proposal';
+import { validateParticipantCount, validateSessionId } from './validation';
 import type {
   AcceptPayload,
   Ack,
@@ -38,6 +40,7 @@ export class ProposalSession {
 
   constructor(client: MacpClient, options: ProposalSessionOptions = {}) {
     this.client = client;
+    if (options.sessionId) validateSessionId(options.sessionId);
     this.sessionId = options.sessionId ?? newSessionId();
     this.modeVersion = options.modeVersion ?? DEFAULT_MODE_VERSION;
     this.configurationVersion = options.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION;
@@ -63,6 +66,7 @@ export class ProposalSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
+    validateParticipantCount(input.participants.length);
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -148,6 +152,9 @@ export class ProposalSession {
   }
 
   async withdraw(input: WithdrawPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    if (!input.proposalId?.trim()) {
+      throw new MacpSessionError('proposalId must be non-empty for withdraw');
+    }
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'Withdraw',
@@ -167,6 +174,7 @@ export class ProposalSession {
     authorityScope: string;
     reason: string;
     commitmentId?: string;
+    outcomePositive?: boolean;
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
@@ -175,6 +183,7 @@ export class ProposalSession {
       authorityScope: input.authorityScope,
       reason: input.reason,
       commitmentId: input.commitmentId,
+      outcomePositive: input.outcomePositive,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,

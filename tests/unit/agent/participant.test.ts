@@ -43,7 +43,7 @@ function makeIncomingMessage(messageType: string, payload: Record<string, unknow
       mode: MODE_DECISION,
       messageType,
       messageId: 'msg-1',
-      sessionId: 'session-1',
+      sessionId: '550e8400-e29b-41d4-a716-446655440000',
       sender: 'agent-a',
       timestampUnixMs: String(Date.now()),
       payload: Buffer.alloc(0),
@@ -58,14 +58,14 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),
       });
 
       expect(participant.participantId).toBe('agent-1');
-      expect(participant.sessionId).toBe('session-1');
+      expect(participant.sessionId).toBe('550e8400-e29b-41d4-a716-446655440000');
       expect(participant.mode).toBe(MODE_DECISION);
       expect(participant.projection).toBeDefined();
       expect(participant.actions).toBeDefined();
@@ -75,7 +75,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_PROPOSAL,
         client,
         transport: makeMockTransport([]),
@@ -87,7 +87,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_TASK,
         client,
         transport: makeMockTransport([]),
@@ -99,7 +99,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_HANDOFF,
         client,
         transport: makeMockTransport([]),
@@ -111,7 +111,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_QUORUM,
         client,
         transport: makeMockTransport([]),
@@ -123,7 +123,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: 'ext.custom.v1',
         client,
         transport: makeMockTransport([]),
@@ -138,7 +138,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),
@@ -152,7 +152,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),
@@ -166,7 +166,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),
@@ -187,7 +187,7 @@ describe('Participant', () => {
 
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport,
@@ -202,7 +202,7 @@ describe('Participant', () => {
         expect.objectContaining({
           participant: expect.objectContaining({ participantId: 'agent-1' }),
           actions: expect.any(Object),
-          session: expect.objectContaining({ sessionId: 'session-1' }),
+          session: expect.objectContaining({ sessionId: '550e8400-e29b-41d4-a716-446655440000' }),
         }),
       );
     });
@@ -220,7 +220,7 @@ describe('Participant', () => {
 
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport,
@@ -243,7 +243,7 @@ describe('Participant', () => {
 
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport,
@@ -264,7 +264,7 @@ describe('Participant', () => {
 
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport,
@@ -280,7 +280,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),
@@ -292,7 +292,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),
@@ -304,7 +304,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),
@@ -316,7 +316,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),
@@ -328,7 +328,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),
@@ -340,7 +340,7 @@ describe('Participant', () => {
       const client = makeMockClient();
       const participant = new Participant({
         participantId: 'agent-1',
-        sessionId: 'session-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
         mode: MODE_DECISION,
         client,
         transport: makeMockTransport([]),

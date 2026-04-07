@@ -7,7 +7,7 @@ import { MODE_DECISION, MODE_TASK } from '../../../src/constants';
 
 function validPayload(overrides?: Partial<BootstrapPayload>): BootstrapPayload {
   return {
-    session_id: 'session-1',
+    session_id: '550e8400-e29b-41d4-a716-446655440000',
     participant_id: 'agent-1',
     mode: MODE_DECISION,
     runtime_address: 'localhost:50051',
@@ -39,7 +39,7 @@ describe('fromBootstrap', () => {
       const participant = fromBootstrap(filePath);
 
       expect(participant.participantId).toBe('agent-1');
-      expect(participant.sessionId).toBe('session-1');
+      expect(participant.sessionId).toBe('550e8400-e29b-41d4-a716-446655440000');
       expect(participant.mode).toBe(MODE_DECISION);
     });
 

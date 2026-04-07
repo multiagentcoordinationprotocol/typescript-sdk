@@ -22,6 +22,20 @@ export class MacpAckError extends MacpSdkError {
     this.name = 'MacpAckError';
     this.ack = ack;
   }
+
+  get reasons(): string[] {
+    if (!this.ack.error?.details) return [];
+    try {
+      const raw =
+        Buffer.isBuffer(this.ack.error.details)
+          ? this.ack.error.details.toString('utf-8')
+          : String(this.ack.error.details);
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed.reasons) ? parsed.reasons : [];
+    } catch {
+      return [];
+    }
+  }
 }
 
 export class MacpSessionError extends MacpSdkError {

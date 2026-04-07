@@ -104,6 +104,10 @@ export class QuorumProjection {
     return Math.max(0, req.requiredApprovals - this.approvalCount(requestId));
   }
 
+  commitmentReady(requestId: string): boolean {
+    return this.hasQuorum(requestId) && this.phase !== 'Committed';
+  }
+
   private countVotes(requestId: string, vote: BallotRecord['vote']): number {
     const senderMap = this.ballots.get(requestId);
     if (!senderMap) return 0;

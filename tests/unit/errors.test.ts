@@ -64,4 +64,40 @@ describe('Error classes', () => {
     expect(err.name).toBe('MacpRetryError');
     expect(err.message).toBe('retries exhausted after 3 attempts');
   });
+
+  describe('MacpAckError.reasons', () => {
+    it('parses reasons from details buffer', () => {
+      const details = Buffer.from(JSON.stringify({ reasons: ['policy mismatch', 'missing field'] }));
+      const err = new MacpAckError({
+        ok: false,
+        error: { code: 'POLICY_DENIED', message: 'denied', details },
+      });
+      expect(err.reasons).toEqual(['policy mismatch', 'missing field']);
+    });
+
+    it('returns empty array when no details', () => {
+      const err = new MacpAckError({
+        ok: false,
+        error: { code: 'POLICY_DENIED', message: 'denied' },
+      });
+      expect(err.reasons).toEqual([]);
+    });
+
+    it('returns empty array on malformed JSON', () => {
+      const err = new MacpAckError({
+        ok: false,
+        error: { code: 'POLICY_DENIED', message: 'denied', details: Buffer.from('not json') },
+      });
+      expect(err.reasons).toEqual([]);
+    });
+
+    it('returns empty array when reasons is not an array', () => {
+      const details = Buffer.from(JSON.stringify({ reasons: 'not-array' }));
+      const err = new MacpAckError({
+        ok: false,
+        error: { code: 'POLICY_DENIED', message: 'denied', details },
+      });
+      expect(err.reasons).toEqual([]);
+    });
+  });
 });

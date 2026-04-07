@@ -8,6 +8,14 @@ import {
 } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { DecisionProjection } from './projections';
+import {
+  validateConfidence,
+  validateParticipantCount,
+  validateRecommendation,
+  validateSessionId,
+  validateSeverity,
+  validateVote,
+} from './validation';
 import type {
   Ack,
   DecisionEvaluationPayload,
@@ -37,6 +45,7 @@ export class DecisionSession {
 
   constructor(client: MacpClient, options: DecisionSessionOptions = {}) {
     this.client = client;
+    if (options.sessionId) validateSessionId(options.sessionId);
     this.sessionId = options.sessionId ?? newSessionId();
     this.modeVersion = options.modeVersion ?? DEFAULT_MODE_VERSION;
     this.configurationVersion = options.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION;
@@ -62,6 +71,7 @@ export class DecisionSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
+    validateParticipantCount(input.participants.length);
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -102,6 +112,8 @@ export class DecisionSession {
   }
 
   async evaluate(input: DecisionEvaluationPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRecommendation(input.recommendation);
+    validateConfidence(input.confidence);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Evaluation',
@@ -117,6 +129,7 @@ export class DecisionSession {
   }
 
   async raiseObjection(input: DecisionObjectionPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    if (input.severity) validateSeverity(input.severity);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Objection',
@@ -132,6 +145,7 @@ export class DecisionSession {
   }
 
   async vote(input: DecisionVotePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateVote(input.vote);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Vote',
@@ -151,6 +165,7 @@ export class DecisionSession {
     authorityScope: string;
     reason: string;
     commitmentId?: string;
+    outcomePositive?: boolean;
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
@@ -159,6 +174,7 @@ export class DecisionSession {
       authorityScope: input.authorityScope,
       reason: input.reason,
       commitmentId: input.commitmentId,
+      outcomePositive: input.outcomePositive,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,

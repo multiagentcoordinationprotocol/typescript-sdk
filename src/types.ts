@@ -114,6 +114,7 @@ export interface CommitmentPayload {
   modeVersion: string;
   policyVersion?: string;
   configurationVersion: string;
+  outcomePositive?: boolean;
 }
 
 export interface SignalPayload {
@@ -287,7 +288,7 @@ export interface PolicyDescriptor {
   description: string;
   rules: Buffer | Uint8Array;
   schema_version: number;
-  registered_at?: string;
+  registered_at_unix_ms?: number;
 }
 
 export interface RegistryChanged {
