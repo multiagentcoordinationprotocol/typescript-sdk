@@ -275,7 +275,7 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<{ ok: boolean; error?: string }> {
     const auth = this.requireAuth(options?.auth);
-    return this.unary('RegisterExtMode', { descriptor }, auth, options?.deadlineMs) as Promise<{
+    return this.unary('RegisterExtMode', { modeDescriptor: descriptor }, auth, options?.deadlineMs) as Promise<{
       ok: boolean;
       error?: string;
     }>;

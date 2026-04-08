@@ -7,9 +7,8 @@ import {
   MODE_PROPOSAL,
 } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
-import { MacpSessionError } from './errors';
 import { ProposalProjection } from './projections/proposal';
-import { validateParticipantCount, validateSessionId } from './validation';
+import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
   AcceptPayload,
   Ack,
@@ -66,7 +65,13 @@ export class ProposalSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
-    validateParticipantCount(input.participants.length);
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -92,6 +97,8 @@ export class ProposalSession {
   }
 
   async propose(input: ProposalModeProposalPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
+    validateRequiredField('title', input.title);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'Proposal',
@@ -107,6 +114,8 @@ export class ProposalSession {
   }
 
   async counterPropose(input: CounterProposalPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
+    validateRequiredField('title', input.title);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'CounterProposal',
@@ -122,6 +131,7 @@ export class ProposalSession {
   }
 
   async accept(input: AcceptPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'Accept',
@@ -137,6 +147,7 @@ export class ProposalSession {
   }
 
   async reject(input: RejectPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'Reject',
@@ -152,9 +163,7 @@ export class ProposalSession {
   }
 
   async withdraw(input: WithdrawPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
-    if (!input.proposalId?.trim()) {
-      throw new MacpSessionError('proposalId must be non-empty for withdraw');
-    }
+    validateRequiredField('proposalId', input.proposalId);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'Withdraw',

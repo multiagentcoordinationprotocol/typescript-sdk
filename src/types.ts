@@ -49,6 +49,7 @@ export interface SessionMetadata {
   policyVersion?: string;
   participants?: string[];
   participantActivity?: ParticipantActivity[];
+  initiator?: string;
 }
 
 export interface ModeDescriptor {

@@ -3,7 +3,7 @@ import type { MacpClient } from './client';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_HANDOFF } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { HandoffProjection } from './projections/handoff';
-import { validateParticipantCount, validateSessionId } from './validation';
+import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
   Ack,
   Envelope,
@@ -59,7 +59,13 @@ export class HandoffSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
-    validateParticipantCount(input.participants.length);
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -85,6 +91,9 @@ export class HandoffSession {
   }
 
   async offer(input: HandoffOfferPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('handoffId', input.handoffId);
+    validateRequiredField('targetParticipant', input.targetParticipant);
+    validateRequiredField('scope', input.scope);
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffOffer',
@@ -100,6 +109,7 @@ export class HandoffSession {
   }
 
   async sendContext(input: HandoffContextPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('handoffId', input.handoffId);
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffContext',
@@ -115,6 +125,7 @@ export class HandoffSession {
   }
 
   async acceptHandoff(input: HandoffAcceptPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('handoffId', input.handoffId);
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffAccept',
@@ -130,6 +141,7 @@ export class HandoffSession {
   }
 
   async decline(input: HandoffDeclinePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('handoffId', input.handoffId);
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffDecline',

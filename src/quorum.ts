@@ -3,7 +3,7 @@ import type { MacpClient } from './client';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_QUORUM } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { QuorumProjection } from './projections/quorum';
-import { validateParticipantCount, validateSessionId } from './validation';
+import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
   AbstainPayload,
   Ack,
@@ -59,7 +59,13 @@ export class QuorumSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
-    validateParticipantCount(input.participants.length);
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -85,6 +91,9 @@ export class QuorumSession {
   }
 
   async requestApproval(input: ApprovalRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('requestId', input.requestId);
+    validateRequiredField('action', input.action);
+    validateRequiredField('summary', input.summary);
     const envelope = buildEnvelope({
       mode: MODE_QUORUM,
       messageType: 'ApprovalRequest',
@@ -100,6 +109,7 @@ export class QuorumSession {
   }
 
   async approve(input: ApprovePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('requestId', input.requestId);
     const envelope = buildEnvelope({
       mode: MODE_QUORUM,
       messageType: 'Approve',
@@ -115,6 +125,7 @@ export class QuorumSession {
   }
 
   async reject(input: QuorumRejectPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('requestId', input.requestId);
     const envelope = buildEnvelope({
       mode: MODE_QUORUM,
       messageType: 'Reject',
@@ -130,6 +141,7 @@ export class QuorumSession {
   }
 
   async abstain(input: AbstainPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('requestId', input.requestId);
     const envelope = buildEnvelope({
       mode: MODE_QUORUM,
       messageType: 'Abstain',

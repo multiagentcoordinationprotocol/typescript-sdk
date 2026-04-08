@@ -7,6 +7,10 @@ import {
   validateSeverity,
   validateParticipantCount,
   validateSignalType,
+  validateTtlMs,
+  validateParticipants,
+  validateRequiredField,
+  validateSessionStart,
 } from '../../src/validation';
 import { MacpSessionError } from '../../src/errors';
 
@@ -112,6 +116,94 @@ describe('validation', () => {
     it('rejects empty signalType when data is present', () => {
       expect(() => validateSignalType('', Buffer.from('data'))).toThrow(MacpSessionError);
       expect(() => validateSignalType('  ', Buffer.from('data'))).toThrow(MacpSessionError);
+    });
+  });
+
+  describe('validateTtlMs', () => {
+    it('accepts valid TTL values', () => {
+      expect(() => validateTtlMs(1)).not.toThrow();
+      expect(() => validateTtlMs(60_000)).not.toThrow();
+      expect(() => validateTtlMs(86_400_000)).not.toThrow();
+    });
+
+    it('rejects zero', () => {
+      expect(() => validateTtlMs(0)).toThrow(MacpSessionError);
+    });
+
+    it('rejects negative values', () => {
+      expect(() => validateTtlMs(-1)).toThrow(MacpSessionError);
+    });
+
+    it('rejects values exceeding 24 hours', () => {
+      expect(() => validateTtlMs(86_400_001)).toThrow(MacpSessionError);
+    });
+
+    it('rejects non-finite values', () => {
+      expect(() => validateTtlMs(Infinity)).toThrow(MacpSessionError);
+      expect(() => validateTtlMs(NaN)).toThrow(MacpSessionError);
+    });
+  });
+
+  describe('validateParticipants', () => {
+    it('accepts non-empty unique lists', () => {
+      expect(() => validateParticipants(['agent://a'])).not.toThrow();
+      expect(() => validateParticipants(['agent://a', 'agent://b'])).not.toThrow();
+    });
+
+    it('rejects empty list', () => {
+      expect(() => validateParticipants([])).toThrow(MacpSessionError);
+    });
+
+    it('rejects duplicate participants', () => {
+      expect(() => validateParticipants(['agent://a', 'agent://a'])).toThrow(MacpSessionError);
+    });
+  });
+
+  describe('validateRequiredField', () => {
+    it('accepts non-empty strings', () => {
+      expect(() => validateRequiredField('field', 'value')).not.toThrow();
+    });
+
+    it('rejects empty strings', () => {
+      expect(() => validateRequiredField('field', '')).toThrow(MacpSessionError);
+    });
+
+    it('rejects whitespace-only strings', () => {
+      expect(() => validateRequiredField('field', '   ')).toThrow(MacpSessionError);
+    });
+  });
+
+  describe('validateSessionStart', () => {
+    const validInput = {
+      intent: 'test intent',
+      participants: ['agent://a', 'agent://b'],
+      ttlMs: 60_000,
+      modeVersion: '1.0.0',
+      configurationVersion: 'config.default',
+    };
+
+    it('accepts valid input', () => {
+      expect(() => validateSessionStart(validInput)).not.toThrow();
+    });
+
+    it('rejects empty intent', () => {
+      expect(() => validateSessionStart({ ...validInput, intent: '' })).toThrow(MacpSessionError);
+    });
+
+    it('rejects empty participants', () => {
+      expect(() => validateSessionStart({ ...validInput, participants: [] })).toThrow(MacpSessionError);
+    });
+
+    it('rejects invalid TTL', () => {
+      expect(() => validateSessionStart({ ...validInput, ttlMs: 0 })).toThrow(MacpSessionError);
+    });
+
+    it('rejects empty modeVersion', () => {
+      expect(() => validateSessionStart({ ...validInput, modeVersion: '' })).toThrow(MacpSessionError);
+    });
+
+    it('rejects empty configurationVersion', () => {
+      expect(() => validateSessionStart({ ...validInput, configurationVersion: '' })).toThrow(MacpSessionError);
     });
   });
 });

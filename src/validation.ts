@@ -66,3 +66,45 @@ export function validateSignalType(signalType: string, data?: Buffer | Uint8Arra
     throw new MacpSessionError('signalType must be non-empty when data is present');
   }
 }
+
+const MAX_TTL_MS = 86_400_000; // 24 hours
+
+export function validateTtlMs(ttlMs: number): void {
+  if (!Number.isFinite(ttlMs) || ttlMs < 1 || ttlMs > MAX_TTL_MS) {
+    throw new MacpSessionError(`ttl_ms must be in [1, ${MAX_TTL_MS}], got ${ttlMs}`);
+  }
+}
+
+export function validateParticipants(participants: string[]): void {
+  if (!participants.length) {
+    throw new MacpSessionError('participants must be non-empty');
+  }
+  const seen = new Set<string>();
+  for (const p of participants) {
+    if (seen.has(p)) {
+      throw new MacpSessionError(`duplicate participant: ${p}`);
+    }
+    seen.add(p);
+  }
+  validateParticipantCount(participants.length);
+}
+
+export function validateRequiredField(fieldName: string, value: string): void {
+  if (!value?.trim()) {
+    throw new MacpSessionError(`${fieldName} must be non-empty`);
+  }
+}
+
+export function validateSessionStart(input: {
+  intent: string;
+  participants: string[];
+  ttlMs: number;
+  modeVersion: string;
+  configurationVersion: string;
+}): void {
+  validateRequiredField('intent', input.intent);
+  validateParticipants(input.participants);
+  validateTtlMs(input.ttlMs);
+  validateRequiredField('modeVersion', input.modeVersion);
+  validateRequiredField('configurationVersion', input.configurationVersion);
+}

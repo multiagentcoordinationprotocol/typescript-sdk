@@ -10,9 +10,10 @@ import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSes
 import { DecisionProjection } from './projections';
 import {
   validateConfidence,
-  validateParticipantCount,
   validateRecommendation,
+  validateRequiredField,
   validateSessionId,
+  validateSessionStart,
   validateSeverity,
   validateVote,
 } from './validation';
@@ -71,7 +72,13 @@ export class DecisionSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
-    validateParticipantCount(input.participants.length);
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -97,6 +104,8 @@ export class DecisionSession {
   }
 
   async propose(input: DecisionProposalPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
+    validateRequiredField('option', input.option);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Proposal',
@@ -112,6 +121,7 @@ export class DecisionSession {
   }
 
   async evaluate(input: DecisionEvaluationPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
     validateRecommendation(input.recommendation);
     validateConfidence(input.confidence);
     const envelope = buildEnvelope({
@@ -129,6 +139,7 @@ export class DecisionSession {
   }
 
   async raiseObjection(input: DecisionObjectionPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
     if (input.severity) validateSeverity(input.severity);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
@@ -145,6 +156,7 @@ export class DecisionSession {
   }
 
   async vote(input: DecisionVotePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
     validateVote(input.vote);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
