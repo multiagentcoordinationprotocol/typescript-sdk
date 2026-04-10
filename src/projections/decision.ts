@@ -84,6 +84,18 @@ export class DecisionProjection {
     }
   }
 
+  get isCommitted(): boolean {
+    return this.commitment !== undefined;
+  }
+
+  get isPositiveOutcome(): boolean | undefined {
+    if (!this.commitment) return undefined;
+    const val =
+      (this.commitment as Record<string, unknown>).outcomePositive ??
+      (this.commitment as Record<string, unknown>).outcome_positive;
+    return val !== undefined ? Boolean(val) : true;
+  }
+
   voteTotals(): Record<string, number> {
     const totals: Record<string, number> = {};
     for (const [proposalId, senderVotes] of this.votes.entries()) {
@@ -93,9 +105,23 @@ export class DecisionProjection {
   }
 
   majorityWinner(): string | undefined {
-    const entries = Object.entries(this.voteTotals());
+    const totals = this.voteTotals();
+    const entries = Object.entries(totals);
     if (!entries.length) return undefined;
-    return entries.sort((a, b) => b[1] - a[1])[0]?.[0];
+    // Count total non-abstain votes across all proposals
+    let nonAbstain = 0;
+    for (const senderVotes of this.votes.values()) {
+      for (const vote of senderVotes.values()) {
+        if (vote.vote.toUpperCase() !== 'ABSTAIN') {
+          nonAbstain++;
+        }
+      }
+    }
+    if (nonAbstain === 0) return undefined;
+    for (const [proposalId, count] of entries) {
+      if (count / nonAbstain > 0.5) return proposalId;
+    }
+    return undefined;
   }
 
   /** Returns the APPROVE vote ratio excluding ABSTAIN votes from the denominator. */
@@ -110,10 +136,13 @@ export class DecisionProjection {
   }
 
   /** Only critical-severity objections are blocking per RFC-MACP-0004. */
-  hasBlockingObjection(proposalId: string): boolean {
-    return this.objections.some(
-      (item) => item.proposalId === proposalId && item.severity.toLowerCase() === 'critical',
-    );
+  hasBlockingObjection(proposalId?: string): boolean {
+    if (proposalId !== undefined) {
+      return this.objections.some(
+        (item) => item.proposalId === proposalId && item.severity.toLowerCase() === 'critical',
+      );
+    }
+    return this.objections.some((item) => item.severity.toLowerCase() === 'critical');
   }
 
   /** Evaluations with REVIEW recommendation (informational only). */
@@ -129,5 +158,11 @@ export class DecisionProjection {
 
 function isPositiveVote(vote: string): boolean {
   const normalized = vote.trim().toUpperCase();
-  return normalized === 'APPROVE' || normalized === 'APPROVED' || normalized === 'YES' || normalized === 'ACCEPT' || normalized === 'ACCEPTED';
+  return (
+    normalized === 'APPROVE' ||
+    normalized === 'APPROVED' ||
+    normalized === 'YES' ||
+    normalized === 'ACCEPT' ||
+    normalized === 'ACCEPTED'
+  );
 }

@@ -24,7 +24,7 @@ export interface DecisionVotingRules {
 }
 
 export interface DecisionObjectionHandling {
-  blockSeverityVetoes?: boolean;
+  criticalSeverityVetoes?: boolean;
   vetoThreshold?: number;
 }
 
@@ -91,12 +91,12 @@ export function buildDecisionPolicy(
   const rulesJson: Record<string, unknown> = {
     voting: {
       algorithm: rules.voting?.algorithm ?? 'none',
-      threshold: rules.voting?.threshold ?? 0,
+      threshold: rules.voting?.threshold ?? 0.5,
       quorum: rules.voting?.quorum ? { type: rules.voting.quorum.type, value: rules.voting.quorum.value } : undefined,
       weights: rules.voting?.weights ?? undefined,
     },
     objection_handling: {
-      block_severity_vetoes: rules.objectionHandling?.blockSeverityVetoes ?? true,
+      critical_severity_vetoes: rules.objectionHandling?.criticalSeverityVetoes ?? false,
       veto_threshold: rules.objectionHandling?.vetoThreshold ?? 1,
     },
     evaluation: {
@@ -110,11 +110,11 @@ export function buildDecisionPolicy(
     },
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.decision.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }
 
@@ -135,11 +135,11 @@ export function buildQuorumPolicy(
     commitment: serializeCommitment(rules.commitment),
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.quorum.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }
 
@@ -161,11 +161,11 @@ export function buildProposalPolicy(
     commitment: serializeCommitment(rules.commitment),
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.proposal.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }
 
@@ -180,11 +180,11 @@ export function buildTaskPolicy(policyId: string, description: string, rules: Ta
     commitment: serializeCommitment(rules.commitment),
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.task.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }
 
@@ -200,10 +200,10 @@ export function buildHandoffPolicy(
     commitment: serializeCommitment(rules.commitment),
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.handoff.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }

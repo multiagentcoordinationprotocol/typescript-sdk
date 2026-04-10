@@ -23,6 +23,10 @@ describe('ProposalProjection', () => {
     projection = new ProposalProjection();
   });
 
+  it('starts in Negotiating phase', () => {
+    expect(projection.phase).toBe('Negotiating');
+  });
+
   it('tracks proposals', () => {
     projection.applyEnvelope(
       makeEnvelope('Proposal', { proposalId: 'p1', title: 'Plan A', summary: 'do it', tags: ['urgent'] }),
@@ -57,7 +61,7 @@ describe('ProposalProjection', () => {
     expect(projection.isAccepted('p2')).toBe(false);
   });
 
-  it('tracks terminal rejections', () => {
+  it('tracks terminal rejections and transitions to TerminalRejected phase', () => {
     projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'X' }), registry);
     projection.applyEnvelope(
       makeEnvelope('Reject', { proposalId: 'p1', terminal: true, reason: 'no' }, 'bob'),
@@ -65,9 +69,11 @@ describe('ProposalProjection', () => {
     );
     expect(projection.isTerminallyRejected('p1')).toBe(true);
     expect(projection.proposals.get('p1')?.status).toBe('rejected');
+    expect(projection.phase).toBe('TerminalRejected');
+    expect(projection.hasTerminalRejection()).toBe(true);
   });
 
-  it('non-terminal rejections do not change proposal status', () => {
+  it('non-terminal rejections do not change proposal status or phase', () => {
     projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', title: 'X' }), registry);
     projection.applyEnvelope(
       makeEnvelope('Reject', { proposalId: 'p1', terminal: false, reason: 'not yet' }, 'bob'),
@@ -75,6 +81,8 @@ describe('ProposalProjection', () => {
     );
     expect(projection.isTerminallyRejected('p1')).toBe(false);
     expect(projection.proposals.get('p1')?.status).toBe('open');
+    expect(projection.phase).toBe('Negotiating');
+    expect(projection.hasTerminalRejection()).toBe(false);
   });
 
   it('tracks withdrawals', () => {

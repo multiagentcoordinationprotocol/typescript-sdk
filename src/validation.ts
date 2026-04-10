@@ -5,9 +5,7 @@ const BASE64URL_RE = /^[A-Za-z0-9_-]{22,}$/;
 
 export function validateSessionId(sid: string): void {
   if (!UUID_RE.test(sid) && !BASE64URL_RE.test(sid)) {
-    throw new MacpSessionError(
-      `session_id must be UUID v4/v7 or base64url (22+ chars), got: ${sid}`,
-    );
+    throw new MacpSessionError(`session_id must be UUID v4/v7 or base64url (22+ chars), got: ${sid}`);
   }
 }
 
@@ -16,9 +14,7 @@ const VALID_VOTES = new Set(['APPROVE', 'REJECT', 'ABSTAIN']);
 export function validateVote(value: string): string {
   const normalized = value.toUpperCase();
   if (!VALID_VOTES.has(normalized)) {
-    throw new MacpSessionError(
-      `invalid vote value '${value}': must be one of APPROVE, REJECT, ABSTAIN`,
-    );
+    throw new MacpSessionError(`invalid vote value '${value}': must be one of APPROVE, REJECT, ABSTAIN`);
   }
   return normalized;
 }
@@ -28,9 +24,7 @@ const VALID_RECOMMENDATIONS = new Set(['APPROVE', 'REVIEW', 'BLOCK', 'REJECT']);
 export function validateRecommendation(value: string): string {
   const normalized = value.toUpperCase();
   if (!VALID_RECOMMENDATIONS.has(normalized)) {
-    throw new MacpSessionError(
-      `invalid recommendation '${value}': must be one of APPROVE, REVIEW, BLOCK, REJECT`,
-    );
+    throw new MacpSessionError(`invalid recommendation '${value}': must be one of APPROVE, REVIEW, BLOCK, REJECT`);
   }
   return normalized;
 }
@@ -46,9 +40,7 @@ const VALID_SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
 export function validateSeverity(value: string): string {
   const normalized = value.toLowerCase();
   if (!VALID_SEVERITIES.has(normalized)) {
-    throw new MacpSessionError(
-      `invalid severity '${value}': must be one of critical, high, medium, low`,
-    );
+    throw new MacpSessionError(`invalid severity '${value}': must be one of critical, high, medium, low`);
   }
   return normalized;
 }

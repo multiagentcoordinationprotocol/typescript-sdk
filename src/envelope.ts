@@ -14,8 +14,8 @@ export function newCommitmentId(): string {
   return randomUUID();
 }
 
-export function nowUnixMs(): string {
-  return String(Date.now());
+export function nowUnixMs(): number {
+  return Date.now();
 }
 
 export function encodeContext(context?: Buffer | string | Record<string, unknown>): Buffer {
@@ -77,6 +77,10 @@ export function buildCommitmentPayload(input: {
   };
 }
 
+export function buildRoot(uri: string, name = ''): Root {
+  return { uri, name };
+}
+
 export function buildEnvelope(input: {
   mode: string;
   messageType: string;
@@ -85,8 +89,9 @@ export function buildEnvelope(input: {
   sender?: string;
   messageId?: string;
   macpVersion?: string;
-  timestampUnixMs?: string;
+  timestampUnixMs?: string | number;
 }): Envelope {
+  const ts = input.timestampUnixMs ?? nowUnixMs();
   return {
     macpVersion: input.macpVersion ?? MACP_VERSION,
     mode: input.mode,
@@ -94,7 +99,7 @@ export function buildEnvelope(input: {
     messageId: input.messageId ?? newMessageId(),
     sessionId: input.sessionId,
     sender: input.sender ?? '',
-    timestampUnixMs: input.timestampUnixMs ?? nowUnixMs(),
+    timestampUnixMs: String(ts),
     payload: input.payload,
   };
 }

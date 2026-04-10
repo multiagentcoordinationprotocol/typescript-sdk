@@ -121,7 +121,7 @@ export class MacpClient {
     this.clientName = options.clientName ?? 'macp-sdk-typescript';
     this.clientVersion = options.clientVersion ?? '0.1.0';
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { protoDir: defaultProtoDir } = require('@macp/proto');
+    const { protoDir: defaultProtoDir } = require('@multiagentcoordinationprotocol/proto');
     const protoDir = options.protoDir ?? defaultProtoDir;
     this.protoRegistry = new ProtoRegistry(protoDir);
     const packageDefinition = protoLoader.loadSync(
@@ -240,12 +240,14 @@ export class MacpClient {
   async cancelSession(
     sessionId: string,
     reason: string,
-    options?: { auth?: AuthConfig; deadlineMs?: number; raiseOnNack?: boolean },
+    options?: { auth?: AuthConfig; deadlineMs?: number; raiseOnNack?: boolean; cancelledBy?: string },
   ): Promise<Ack> {
     const auth = this.requireAuth(options?.auth);
-    const response = await this.unary<{ sessionId: string; reason: string }, { ack: Ack }>(
+    const request: Record<string, string> = { sessionId, reason };
+    if (options?.cancelledBy) request.cancelledBy = options.cancelledBy;
+    const response = await this.unary<Record<string, string>, { ack: Ack }>(
       'CancelSession',
-      { sessionId, reason },
+      request,
       auth,
       options?.deadlineMs,
     );
@@ -310,7 +312,7 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<{ ok: boolean; error?: string }> {
     const auth = this.requireAuth(options?.auth);
-    return this.unary('RegisterPolicy', { descriptor }, auth, options?.deadlineMs) as Promise<{
+    return this.unary('RegisterPolicy', { policyDescriptor: descriptor }, auth, options?.deadlineMs) as Promise<{
       ok: boolean;
       error?: string;
     }>;
@@ -329,13 +331,13 @@ export class MacpClient {
 
   async getPolicy(policyId: string, options?: { auth?: AuthConfig; deadlineMs?: number }): Promise<PolicyDescriptor> {
     const auth = this.requireAuth(options?.auth);
-    const res = await this.unary<{ policyId: string }, { descriptor: PolicyDescriptor }>(
+    const res = await this.unary<{ policyId: string }, { policyDescriptor: PolicyDescriptor }>(
       'GetPolicy',
       { policyId },
       auth,
       options?.deadlineMs,
     );
-    return res.descriptor;
+    return res.policyDescriptor;
   }
 
   async listPolicies(mode?: string, options?: { auth?: AuthConfig; deadlineMs?: number }): Promise<PolicyDescriptor[]> {
@@ -349,10 +351,14 @@ export class MacpClient {
     return res.descriptors || [];
   }
 
-  /** @internal Used by PolicyWatcher */
-  _watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+  watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchPolicies({}, metadata) : (this.client as any).WatchPolicies({});
+  }
+
+  /** @internal Backwards-compatible alias */
+  _watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    return this.watchPolicies(auth);
   }
 
   openStream(options?: { auth?: AuthConfig }): MacpStream {
@@ -362,22 +368,32 @@ export class MacpClient {
     return new MacpStream(call);
   }
 
-  /** @internal Used by ModeRegistryWatcher */
-  _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+  watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchModeRegistry({}, metadata) : (this.client as any).WatchModeRegistry({});
   }
 
-  /** @internal Used by RootsWatcher */
-  _watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+  watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchRoots({}, metadata) : (this.client as any).WatchRoots({});
   }
 
-  /** @internal Used by SignalWatcher */
-  _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+  watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchSignals({}, metadata) : (this.client as any).WatchSignals({});
+  }
+
+  /** @internal Backwards-compatible aliases */
+  _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    return this.watchModeRegistry(auth);
+  }
+
+  _watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    return this.watchRoots(auth);
+  }
+
+  _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    return this.watchSignals(auth);
   }
 
   async sendSignal(options: {

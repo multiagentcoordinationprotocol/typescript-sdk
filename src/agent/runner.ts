@@ -12,9 +12,12 @@ export interface BootstrapPayload {
   mode_version?: string;
   configuration_version?: string;
   policy_version?: string;
-  runtime_address: string;
+  runtime_address?: string;
+  runtime_url?: string;
   auth_token?: string;
   agent_id?: string;
+  secure?: boolean;
+  participants?: string[];
 }
 
 export function fromBootstrap(bootstrapPath?: string): Participant {
@@ -37,14 +40,17 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
   if (!payload.session_id) throw new Error('Bootstrap payload missing session_id');
   if (!payload.participant_id) throw new Error('Bootstrap payload missing participant_id');
   if (!payload.mode) throw new Error('Bootstrap payload missing mode');
-  if (!payload.runtime_address) throw new Error('Bootstrap payload missing runtime_address');
+
+  const runtimeAddress = payload.runtime_address ?? payload.runtime_url ?? '';
+  if (!runtimeAddress) throw new Error('Bootstrap payload missing runtime_address / runtime_url');
 
   const auth = payload.auth_token
     ? Auth.bearer(payload.auth_token, payload.participant_id)
     : Auth.devAgent(payload.agent_id ?? payload.participant_id);
 
   const client = new MacpClient({
-    address: payload.runtime_address,
+    address: runtimeAddress,
+    secure: payload.secure,
     auth,
   });
 
@@ -54,6 +60,7 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
     mode: payload.mode,
     client,
     auth,
+    participants: payload.participants ?? [],
     modeVersion: payload.mode_version,
     configurationVersion: payload.configuration_version,
     policyVersion: payload.policy_version ?? DEFAULT_POLICY_VERSION,

@@ -1,5 +1,5 @@
 import { authSender, type AuthConfig } from './auth';
-import type { MacpClient } from './client';
+import type { MacpClient, MacpStream } from './client';
 import {
   DEFAULT_CONFIGURATION_VERSION,
   DEFAULT_MODE_VERSION,
@@ -207,5 +207,16 @@ export class DecisionSession {
 
   metadata(auth?: AuthConfig): Promise<{ metadata: SessionMetadata }> {
     return this.client.getSession(this.sessionId, { auth: auth ?? this.auth });
+  }
+
+  async cancel(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.cancelSession(this.sessionId, reason, {
+      auth: auth ?? this.auth,
+      raiseOnNack: true,
+    });
+  }
+
+  openStream(auth?: AuthConfig): MacpStream {
+    return this.client.openStream({ auth: auth ?? this.auth });
   }
 }

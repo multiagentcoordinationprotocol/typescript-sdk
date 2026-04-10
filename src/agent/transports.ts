@@ -85,20 +85,46 @@ export class HttpTransportAdapter implements TransportAdapter {
           continue;
         }
 
-        const body = (await response.json()) as { events?: Array<{ envelope: Envelope; seq: number }> };
-        const events = body.events ?? [];
+        const body = await response.json();
 
-        for (const event of events) {
-          if (event.seq > this.lastSeq) {
-            this.lastSeq = event.seq;
+        // Accept both Python format (JSON array of items) and
+        // TypeScript format ({ events: [{ envelope, seq }] }).
+        if (Array.isArray(body)) {
+          // Python-style: plain array of envelope-like objects
+          for (const item of body as Array<Record<string, unknown>>) {
+            const itemSeq = (item.seq as number) ?? this.lastSeq + 1;
+            if (itemSeq > this.lastSeq) {
+              this.lastSeq = itemSeq;
+            }
+            yield {
+              messageType: (item.message_type as string) ?? (item.messageType as string) ?? '',
+              sender: (item.sender as string) ?? '',
+              payload:
+                typeof item.payload === 'object' && item.payload !== null
+                  ? (item.payload as Record<string, unknown>)
+                  : this.tryParsePayload(item.payload as Buffer | Uint8Array | string),
+              proposalId: (item.proposal_id as string) ?? (item.proposalId as string),
+              raw: item as unknown as Envelope,
+              seq: this.seq++,
+            };
           }
-          yield {
-            messageType: event.envelope.messageType,
-            sender: event.envelope.sender,
-            payload: this.tryParsePayload(event.envelope.payload),
-            raw: event.envelope,
-            seq: this.seq++,
-          };
+        } else {
+          // TypeScript-style: { events: [{ envelope, seq }] }
+          const wrapped = body as { events?: Array<{ envelope: Envelope; seq: number }> };
+          const events = wrapped.events ?? [];
+
+          for (const event of events) {
+            if (event.seq > this.lastSeq) {
+              this.lastSeq = event.seq;
+            }
+            yield {
+              messageType: event.envelope.messageType,
+              sender: event.envelope.sender,
+              payload: this.tryParsePayload(event.envelope.payload),
+              raw: event.envelope,
+              seq: this.seq++,
+            };
+          }
         }
       } catch {
         // Ignore errors, retry after interval

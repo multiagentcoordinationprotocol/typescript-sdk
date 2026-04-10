@@ -23,7 +23,11 @@ describe('HandoffProjection', () => {
     projection = new HandoffProjection();
   });
 
-  it('tracks handoff offers', () => {
+  it('starts in Pending phase', () => {
+    expect(projection.phase).toBe('Pending');
+  });
+
+  it('tracks handoff offers and transitions to OfferPending phase', () => {
     projection.applyEnvelope(
       makeEnvelope('HandoffOffer', { handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend', reason: 'busy' }),
       registry,
@@ -35,6 +39,7 @@ describe('HandoffProjection', () => {
       scope: 'frontend',
       status: 'offered',
     });
+    expect(projection.phase).toBe('OfferPending');
   });
 
   it('tracks context sharing', () => {
@@ -59,7 +64,7 @@ describe('HandoffProjection', () => {
     projection.applyEnvelope(makeEnvelope('HandoffAccept', { handoffId: 'h1', acceptedBy: 'bob' }, 'bob'), registry);
     expect(projection.isAccepted('h1')).toBe(true);
     expect(projection.getHandoff('h1')?.acceptedBy).toBe('bob');
-    expect(projection.phase).toBe('Resolved');
+    expect(projection.phase).toBe('Accepted');
   });
 
   it('tracks decline', () => {
@@ -72,7 +77,7 @@ describe('HandoffProjection', () => {
       registry,
     );
     expect(projection.isDeclined('h1')).toBe(true);
-    expect(projection.phase).toBe('Resolved');
+    expect(projection.phase).toBe('Declined');
   });
 
   it('pendingHandoffs filters correctly', () => {

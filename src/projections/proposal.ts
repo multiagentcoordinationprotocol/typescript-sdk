@@ -30,7 +30,7 @@ export class ProposalProjection {
   readonly accepts: ProposalAcceptRecord[] = [];
   readonly rejections: ProposalRejectRecord[] = [];
   readonly transcript: Envelope[] = [];
-  phase: 'Proposing' | 'Negotiating' | 'Committed' = 'Proposing';
+  phase: 'Negotiating' | 'TerminalRejected' | 'Committed' = 'Negotiating';
   commitment?: Record<string, unknown>;
 
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
@@ -48,7 +48,6 @@ export class ProposalProjection {
           sender: envelope.sender,
           status: 'open',
         });
-        this.phase = 'Negotiating';
         break;
       }
       case 'CounterProposal': {
@@ -85,6 +84,7 @@ export class ProposalProjection {
         if (terminal) {
           const proposal = this.proposals.get(record.proposalId);
           if (proposal) proposal.status = 'rejected';
+          this.phase = 'TerminalRejected';
         }
         break;
       }
@@ -104,6 +104,18 @@ export class ProposalProjection {
     }
   }
 
+  get isCommitted(): boolean {
+    return this.commitment !== undefined;
+  }
+
+  get isPositiveOutcome(): boolean | undefined {
+    if (!this.commitment) return undefined;
+    const val =
+      (this.commitment as Record<string, unknown>).outcomePositive ??
+      (this.commitment as Record<string, unknown>).outcome_positive;
+    return val !== undefined ? Boolean(val) : true;
+  }
+
   activeProposals(): ProposalRecord[] {
     return [...this.proposals.values()].filter((p) => p.status === 'open');
   }
@@ -119,5 +131,24 @@ export class ProposalProjection {
 
   isTerminallyRejected(proposalId: string): boolean {
     return this.rejections.some((r) => r.proposalId === proposalId && r.terminal);
+  }
+
+  liveProposals(): Map<string, ProposalRecord> {
+    const result = new Map<string, ProposalRecord>();
+    for (const [id, p] of this.proposals) {
+      if (p.status !== 'withdrawn') result.set(id, p);
+    }
+    return result;
+  }
+
+  acceptedProposal(): string | undefined {
+    if (this.accepts.length === 0) return undefined;
+    const ids = new Set(this.accepts.map((a) => a.proposalId));
+    if (ids.size === 1) return ids.values().next().value;
+    return undefined;
+  }
+
+  hasTerminalRejection(): boolean {
+    return this.rejections.some((r) => r.terminal);
   }
 }

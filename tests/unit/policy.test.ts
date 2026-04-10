@@ -13,17 +13,17 @@ function parseRules(descriptor: { rules: Buffer | Uint8Array }): Record<string, 
 
 describe('policy builders', () => {
   describe('buildDecisionPolicy', () => {
-    it('builds a descriptor with correct mode and schema_version', () => {
+    it('builds a descriptor with correct mode and schemaVersion', () => {
       const descriptor = buildDecisionPolicy('policy.test', 'Test policy', {});
-      expect(descriptor.policy_id).toBe('policy.test');
+      expect(descriptor.policyId).toBe('policy.test');
       expect(descriptor.mode).toBe('macp.mode.decision.v1');
       expect(descriptor.description).toBe('Test policy');
-      expect(descriptor.schema_version).toBe(1);
+      expect(descriptor.schemaVersion).toBe(1);
     });
 
     it('includes default voting rules', () => {
       const rules = parseRules(buildDecisionPolicy('p1', 'desc', {}));
-      expect(rules.voting).toEqual(expect.objectContaining({ algorithm: 'none', threshold: 0 }));
+      expect(rules.voting).toEqual(expect.objectContaining({ algorithm: 'none', threshold: 0.5 }));
     });
 
     it('includes custom voting rules', () => {
@@ -50,11 +50,11 @@ describe('policy builders', () => {
     it('includes objection handling rules', () => {
       const rules = parseRules(
         buildDecisionPolicy('p1', 'desc', {
-          objectionHandling: { blockSeverityVetoes: false, vetoThreshold: 2 },
+          objectionHandling: { criticalSeverityVetoes: false, vetoThreshold: 2 },
         }),
       );
       expect(rules.objection_handling).toEqual({
-        block_severity_vetoes: false,
+        critical_severity_vetoes: false,
         veto_threshold: 2,
       });
     });
@@ -91,7 +91,7 @@ describe('policy builders', () => {
     it('uses default objection handling values', () => {
       const rules = parseRules(buildDecisionPolicy('p1', 'desc', {}));
       expect(rules.objection_handling).toEqual({
-        block_severity_vetoes: true,
+        critical_severity_vetoes: false,
         veto_threshold: 1,
       });
     });
@@ -110,7 +110,7 @@ describe('policy builders', () => {
     it('builds with correct mode', () => {
       const descriptor = buildQuorumPolicy('q1', 'Quorum policy', {});
       expect(descriptor.mode).toBe('macp.mode.quorum.v1');
-      expect(descriptor.schema_version).toBe(1);
+      expect(descriptor.schemaVersion).toBe(1);
     });
 
     it('uses RFC default values', () => {

@@ -17,9 +17,10 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts' --ignore-unknown",
     "format:check": "prettier --check 'src/**/*.ts' 'tests/**/*.ts' --ignore-unknown",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "test:coverage": "vitest run --coverage --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "engines": {
     "node": ">=18"
@@ -36,7 +37,7 @@
     "url": "https://github.com/multiagentcoordinationprotocol/typescript-sdk.git"
   },
   "dependencies": {
-    "@macp/proto": "^0.1.0",
+    "@multiagentcoordinationprotocol/proto": "^0.1.0",
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",
     "protobufjs": "^8.0.0"

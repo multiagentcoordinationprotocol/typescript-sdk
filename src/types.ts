@@ -238,7 +238,7 @@ export interface TaskFailPayload {
 export interface HandoffOfferPayload {
   handoffId: string;
   targetParticipant: string;
-  scope: string;
+  scope?: string;
   reason?: string;
 }
 
@@ -284,12 +284,12 @@ export interface AbstainPayload {
 }
 
 export interface PolicyDescriptor {
-  policy_id: string;
+  policyId: string;
   mode: string;
   description: string;
   rules: Buffer | Uint8Array;
-  schema_version: number;
-  registered_at_unix_ms?: number;
+  schemaVersion: number;
+  registeredAtUnixMs?: number;
 }
 
 export interface RegistryChanged {

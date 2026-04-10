@@ -13,6 +13,8 @@ export interface SessionInfo {
   sessionId: string;
   mode: string;
   participants: string[];
+  modeVersion?: string;
+  configurationVersion?: string;
   policyVersion?: string;
 }
 
@@ -21,7 +23,13 @@ export interface SessionActions {
   vote?(input: { proposalId: string; vote: string; reason?: string }): Promise<void>;
   raiseObjection?(input: { proposalId: string; reason: string; severity?: string }): Promise<void>;
   propose?(input: { proposalId: string; option: string; rationale?: string; supportingData?: Buffer }): Promise<void>;
-  commit?(input: { action: string; authorityScope: string; reason: string; commitmentId?: string; outcomePositive?: boolean }): Promise<void>;
+  commit?(input: {
+    action: string;
+    authorityScope: string;
+    reason: string;
+    commitmentId?: string;
+    outcomePositive?: boolean;
+  }): Promise<void>;
   send?(messageType: string, payload: Record<string, unknown>): Promise<void>;
 }
 
