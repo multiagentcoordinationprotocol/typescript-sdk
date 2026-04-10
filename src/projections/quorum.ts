@@ -21,7 +21,7 @@ export class QuorumProjection {
   readonly requests = new Map<string, ApprovalRequestRecord>();
   readonly ballots = new Map<string, Map<string, BallotRecord>>();
   readonly transcript: Envelope[] = [];
-  phase: 'Requesting' | 'Voting' | 'Committed' = 'Requesting';
+  phase: 'Pending' | 'Voting' | 'Committed' = 'Pending';
   commitment?: Record<string, unknown>;
 
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
@@ -65,6 +65,18 @@ export class QuorumProjection {
     }
   }
 
+  get isCommitted(): boolean {
+    return this.commitment !== undefined;
+  }
+
+  get isPositiveOutcome(): boolean | undefined {
+    if (!this.commitment) return undefined;
+    const val =
+      (this.commitment as Record<string, unknown>).outcomePositive ??
+      (this.commitment as Record<string, unknown>).outcome_positive;
+    return val !== undefined ? Boolean(val) : true;
+  }
+
   private setBallot(requestId: string, sender: string, vote: BallotRecord['vote'], reason?: string): void {
     const senderMap = this.ballots.get(requestId) ?? new Map<string, BallotRecord>();
     senderMap.set(sender, { requestId, vote, reason, sender });
@@ -102,6 +114,17 @@ export class QuorumProjection {
     const req = this.requests.get(requestId);
     if (!req) return 0;
     return Math.max(0, req.requiredApprovals - this.approvalCount(requestId));
+  }
+
+  commitmentReady(requestId: string): boolean {
+    return this.hasQuorum(requestId) && this.phase !== 'Committed';
+  }
+
+  isThresholdUnreachable(requestId: string, totalEligible: number): boolean {
+    const req = this.requests.get(requestId);
+    if (!req) return false;
+    const remaining = totalEligible - this.votedSenders(requestId).length;
+    return this.approvalCount(requestId) + remaining < req.requiredApprovals;
   }
 
   private countVotes(requestId: string, vote: BallotRecord['vote']): number {

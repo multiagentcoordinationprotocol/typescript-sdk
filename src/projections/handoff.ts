@@ -17,7 +17,7 @@ export interface HandoffRecord {
 export class HandoffProjection {
   readonly handoffs = new Map<string, HandoffRecord>();
   readonly transcript: Envelope[] = [];
-  phase: 'Offering' | 'ContextSharing' | 'Resolved' | 'Committed' = 'Offering';
+  phase: 'Pending' | 'OfferPending' | 'ContextSharing' | 'Accepted' | 'Declined' | 'Committed' = 'Pending';
   commitment?: Record<string, unknown>;
 
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
@@ -35,16 +35,21 @@ export class HandoffProjection {
           sender: envelope.sender,
           status: 'offered',
         });
+        this.phase = 'OfferPending';
         break;
       }
       case 'HandoffContext': {
         const record = payload as { handoffId: string; contentType: string };
         const handoff = this.handoffs.get(record.handoffId);
         if (handoff) {
-          handoff.status = 'context_sent';
+          // Per RFC-MACP-0010 §2.1: context after accept is permitted as supplementary docs.
+          // Only update status if not already accepted/declined.
+          if (handoff.status === 'offered') {
+            handoff.status = 'context_sent';
+          }
           handoff.contextContentType = record.contentType;
         }
-        this.phase = 'ContextSharing';
+        if (this.phase === 'OfferPending') this.phase = 'ContextSharing';
         break;
       }
       case 'HandoffAccept': {
@@ -54,7 +59,7 @@ export class HandoffProjection {
           handoff.status = 'accepted';
           handoff.acceptedBy = record.acceptedBy;
         }
-        this.phase = 'Resolved';
+        this.phase = 'Accepted';
         break;
       }
       case 'HandoffDecline': {
@@ -64,7 +69,7 @@ export class HandoffProjection {
           handoff.status = 'declined';
           handoff.declinedBy = record.declinedBy;
         }
-        this.phase = 'Resolved';
+        this.phase = 'Declined';
         break;
       }
       case 'Commitment': {
@@ -75,6 +80,18 @@ export class HandoffProjection {
       default:
         break;
     }
+  }
+
+  get isCommitted(): boolean {
+    return this.commitment !== undefined;
+  }
+
+  get isPositiveOutcome(): boolean | undefined {
+    if (!this.commitment) return undefined;
+    const val =
+      (this.commitment as Record<string, unknown>).outcomePositive ??
+      (this.commitment as Record<string, unknown>).outcome_positive;
+    return val !== undefined ? Boolean(val) : true;
   }
 
   getHandoff(handoffId: string): HandoffRecord | undefined {
@@ -91,5 +108,20 @@ export class HandoffProjection {
 
   pendingHandoffs(): HandoffRecord[] {
     return [...this.handoffs.values()].filter((h) => h.status === 'offered' || h.status === 'context_sent');
+  }
+
+  hasAcceptedOffer(handoffId?: string): boolean {
+    if (handoffId) return this.handoffs.get(handoffId)?.status === 'accepted';
+    return [...this.handoffs.values()].some((h) => h.status === 'accepted');
+  }
+
+  activeOffer(): HandoffRecord | undefined {
+    const all = [...this.handoffs.values()];
+    for (let i = all.length - 1; i >= 0; i--) {
+      if (all[i].status === 'offered' || all[i].status === 'context_sent') {
+        return all[i];
+      }
+    }
+    return undefined;
   }
 }

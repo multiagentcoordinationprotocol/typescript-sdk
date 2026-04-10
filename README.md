@@ -8,6 +8,18 @@ TypeScript SDK for the [Multi-Agent Coordination Protocol (MACP)](https://github
 npm install macp-sdk-typescript
 ```
 
+The SDK depends on `@multiagentcoordinationprotocol/proto` from GitHub Packages. Create a `.npmrc` in your project root:
+
+```
+@multiagentcoordinationprotocol:registry=https://npm.pkg.github.com
+```
+
+And configure a GitHub PAT with `read:packages` scope:
+
+```bash
+npm config set //npm.pkg.github.com/:_authToken YOUR_GITHUB_PAT
+```
+
 ## Quick Start
 
 ```typescript
@@ -236,13 +248,32 @@ try {
 ## Development
 
 ```bash
-npm run build          # Compile TypeScript
-npm run check          # Type-check only
-npm run lint           # ESLint
-npm run format         # Prettier
-npm test               # Run all tests
-npm run test:watch     # Watch mode
-npm run test:coverage  # With coverage
+npm run build              # Compile TypeScript
+npm run check              # Type-check only
+npm run lint               # ESLint
+npm run format             # Prettier
+npm test                   # Run unit + conformance tests
+npm run test:watch         # Watch mode
+npm run test:coverage      # With coverage
+npm run test:integration   # Integration tests (requires Docker runtime)
+```
+
+### Integration Tests
+
+Run the full SDK against a live MACP runtime:
+
+```bash
+# Build and start the runtime
+docker build -t macp-runtime ../runtime/
+docker run -d --name macp-runtime-test -p 50051:50051 \
+  -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
+  -e MACP_ALLOW_DEV_SENDER_HEADER=1 -e MACP_MEMORY_ONLY=1 macp-runtime
+
+# Run tests
+npm run test:integration
+
+# Clean up
+docker rm -f macp-runtime-test
 ```
 
 ## Runtime Boundary

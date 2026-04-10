@@ -23,7 +23,11 @@ describe('TaskProjection', () => {
     projection = new TaskProjection();
   });
 
-  it('tracks task requests', () => {
+  it('starts in Pending phase', () => {
+    expect(projection.phase).toBe('Pending');
+  });
+
+  it('tracks task requests and transitions to Requested phase', () => {
     projection.applyEnvelope(
       makeEnvelope('TaskRequest', { taskId: 't1', title: 'Build feature', instructions: 'implement it' }),
       registry,
@@ -31,6 +35,7 @@ describe('TaskProjection', () => {
     expect(projection.tasks.size).toBe(1);
     const task = projection.getTask('t1');
     expect(task).toMatchObject({ taskId: 't1', title: 'Build feature', status: 'requested', progress: 0 });
+    expect(projection.phase).toBe('Requested');
   });
 
   it('tracks task acceptance', () => {
@@ -117,5 +122,25 @@ describe('TaskProjection', () => {
 
   it('progressOf returns 0 for unknown task', () => {
     expect(projection.progressOf('nope')).toBe(0);
+  });
+
+  it('latestProgress returns undefined when no updates exist', () => {
+    expect(projection.latestProgress()).toBeUndefined();
+  });
+
+  it('latestProgress returns progress from most recent update', () => {
+    projection.applyEnvelope(makeEnvelope('TaskRequest', { taskId: 't1', title: 'X', instructions: 'do' }), registry);
+    projection.applyEnvelope(makeEnvelope('TaskAccept', { taskId: 't1', assignee: 'w' }, 'w'), registry);
+    projection.applyEnvelope(
+      makeEnvelope('TaskUpdate', { taskId: 't1', status: 'working', progress: 0.3, message: 'started' }, 'w'),
+      registry,
+    );
+    expect(projection.latestProgress()).toBe(0.3);
+
+    projection.applyEnvelope(
+      makeEnvelope('TaskUpdate', { taskId: 't1', status: 'working', progress: 0.7, message: 'almost done' }, 'w'),
+      registry,
+    );
+    expect(projection.latestProgress()).toBe(0.7);
   });
 });

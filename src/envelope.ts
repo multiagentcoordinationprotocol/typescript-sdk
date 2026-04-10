@@ -14,8 +14,8 @@ export function newCommitmentId(): string {
   return randomUUID();
 }
 
-export function nowUnixMs(): string {
-  return String(Date.now());
+export function nowUnixMs(): number {
+  return Date.now();
 }
 
 export function encodeContext(context?: Buffer | string | Record<string, unknown>): Buffer {
@@ -47,6 +47,14 @@ export function buildSessionStartPayload(input: {
   };
 }
 
+const NEGATIVE_SUFFIXES = ['rejected', 'failed', 'declined'];
+
+export function inferOutcomePositive(action: string): boolean {
+  const lower = action.toLowerCase();
+  if (NEGATIVE_SUFFIXES.some((s) => lower.endsWith(s))) return false;
+  return true;
+}
+
 export function buildCommitmentPayload(input: {
   action: string;
   authorityScope: string;
@@ -55,6 +63,7 @@ export function buildCommitmentPayload(input: {
   modeVersion?: string;
   configurationVersion?: string;
   policyVersion?: string;
+  outcomePositive?: boolean;
 }): CommitmentPayload {
   return {
     commitmentId: input.commitmentId ?? newCommitmentId(),
@@ -64,7 +73,12 @@ export function buildCommitmentPayload(input: {
     modeVersion: input.modeVersion ?? DEFAULT_MODE_VERSION,
     configurationVersion: input.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION,
     policyVersion: input.policyVersion ?? DEFAULT_POLICY_VERSION,
+    outcomePositive: input.outcomePositive ?? inferOutcomePositive(input.action),
   };
+}
+
+export function buildRoot(uri: string, name = ''): Root {
+  return { uri, name };
 }
 
 export function buildEnvelope(input: {
@@ -75,8 +89,9 @@ export function buildEnvelope(input: {
   sender?: string;
   messageId?: string;
   macpVersion?: string;
-  timestampUnixMs?: string;
+  timestampUnixMs?: string | number;
 }): Envelope {
+  const ts = input.timestampUnixMs ?? nowUnixMs();
   return {
     macpVersion: input.macpVersion ?? MACP_VERSION,
     mode: input.mode,
@@ -84,7 +99,7 @@ export function buildEnvelope(input: {
     messageId: input.messageId ?? newMessageId(),
     sessionId: input.sessionId,
     sender: input.sender ?? '',
-    timestampUnixMs: input.timestampUnixMs ?? nowUnixMs(),
+    timestampUnixMs: String(ts),
     payload: input.payload,
   };
 }

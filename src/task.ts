@@ -1,8 +1,9 @@
 import { authSender, type AuthConfig } from './auth';
-import type { MacpClient } from './client';
+import type { MacpClient, MacpStream } from './client';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_TASK } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { TaskProjection } from './projections/task';
+import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
   Ack,
   Envelope,
@@ -34,6 +35,7 @@ export class TaskSession {
 
   constructor(client: MacpClient, options: TaskSessionOptions = {}) {
     this.client = client;
+    if (options.sessionId) validateSessionId(options.sessionId);
     this.sessionId = options.sessionId ?? newSessionId();
     this.modeVersion = options.modeVersion ?? DEFAULT_MODE_VERSION;
     this.configurationVersion = options.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION;
@@ -59,6 +61,13 @@ export class TaskSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -84,6 +93,9 @@ export class TaskSession {
   }
 
   async request(input: TaskRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('taskId', input.taskId);
+    validateRequiredField('title', input.title);
+    validateRequiredField('instructions', input.instructions);
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskRequest',
@@ -99,6 +111,7 @@ export class TaskSession {
   }
 
   async acceptTask(input: TaskAcceptPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('taskId', input.taskId);
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskAccept',
@@ -114,6 +127,7 @@ export class TaskSession {
   }
 
   async rejectTask(input: TaskRejectPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('taskId', input.taskId);
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskReject',
@@ -129,6 +143,7 @@ export class TaskSession {
   }
 
   async update(input: TaskUpdatePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('taskId', input.taskId);
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskUpdate',
@@ -144,6 +159,7 @@ export class TaskSession {
   }
 
   async complete(input: TaskCompletePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('taskId', input.taskId);
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskComplete',
@@ -159,6 +175,7 @@ export class TaskSession {
   }
 
   async fail(input: TaskFailPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('taskId', input.taskId);
     const envelope = buildEnvelope({
       mode: MODE_TASK,
       messageType: 'TaskFail',
@@ -178,6 +195,7 @@ export class TaskSession {
     authorityScope: string;
     reason: string;
     commitmentId?: string;
+    outcomePositive?: boolean;
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
@@ -186,6 +204,7 @@ export class TaskSession {
       authorityScope: input.authorityScope,
       reason: input.reason,
       commitmentId: input.commitmentId,
+      outcomePositive: input.outcomePositive,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,
@@ -206,5 +225,16 @@ export class TaskSession {
 
   metadata(auth?: AuthConfig): Promise<{ metadata: SessionMetadata }> {
     return this.client.getSession(this.sessionId, { auth: auth ?? this.auth });
+  }
+
+  async cancel(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.cancelSession(this.sessionId, reason, {
+      auth: auth ?? this.auth,
+      raiseOnNack: true,
+    });
+  }
+
+  openStream(auth?: AuthConfig): MacpStream {
+    return this.client.openStream({ auth: auth ?? this.auth });
   }
 }

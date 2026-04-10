@@ -1,8 +1,9 @@
 import { authSender, type AuthConfig } from './auth';
-import type { MacpClient } from './client';
+import type { MacpClient, MacpStream } from './client';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_HANDOFF } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { HandoffProjection } from './projections/handoff';
+import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
   Ack,
   Envelope,
@@ -32,6 +33,7 @@ export class HandoffSession {
 
   constructor(client: MacpClient, options: HandoffSessionOptions = {}) {
     this.client = client;
+    if (options.sessionId) validateSessionId(options.sessionId);
     this.sessionId = options.sessionId ?? newSessionId();
     this.modeVersion = options.modeVersion ?? DEFAULT_MODE_VERSION;
     this.configurationVersion = options.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION;
@@ -57,6 +59,13 @@ export class HandoffSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -82,6 +91,9 @@ export class HandoffSession {
   }
 
   async offer(input: HandoffOfferPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('handoffId', input.handoffId);
+    validateRequiredField('targetParticipant', input.targetParticipant);
+    const offerInput = { ...input, scope: input.scope ?? '' };
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffOffer',
@@ -90,13 +102,14 @@ export class HandoffSession {
       payload: this.client.protoRegistry.encodeKnownPayload(
         MODE_HANDOFF,
         'HandoffOffer',
-        input as unknown as Record<string, unknown>,
+        offerInput as unknown as Record<string, unknown>,
       ),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
 
-  async sendContext(input: HandoffContextPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+  async addContext(input: HandoffContextPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('handoffId', input.handoffId);
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffContext',
@@ -111,7 +124,13 @@ export class HandoffSession {
     return this.sendAndTrack(envelope, input.auth);
   }
 
+  /** @deprecated Use {@link addContext} instead. */
+  async sendContext(input: HandoffContextPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    return this.addContext(input);
+  }
+
   async acceptHandoff(input: HandoffAcceptPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('handoffId', input.handoffId);
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffAccept',
@@ -127,6 +146,7 @@ export class HandoffSession {
   }
 
   async decline(input: HandoffDeclinePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('handoffId', input.handoffId);
     const envelope = buildEnvelope({
       mode: MODE_HANDOFF,
       messageType: 'HandoffDecline',
@@ -146,6 +166,7 @@ export class HandoffSession {
     authorityScope: string;
     reason: string;
     commitmentId?: string;
+    outcomePositive?: boolean;
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
@@ -154,6 +175,7 @@ export class HandoffSession {
       authorityScope: input.authorityScope,
       reason: input.reason,
       commitmentId: input.commitmentId,
+      outcomePositive: input.outcomePositive,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,
@@ -174,5 +196,16 @@ export class HandoffSession {
 
   metadata(auth?: AuthConfig): Promise<{ metadata: SessionMetadata }> {
     return this.client.getSession(this.sessionId, { auth: auth ?? this.auth });
+  }
+
+  async cancel(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.cancelSession(this.sessionId, reason, {
+      auth: auth ?? this.auth,
+      raiseOnNack: true,
+    });
+  }
+
+  openStream(auth?: AuthConfig): MacpStream {
+    return this.client.openStream({ auth: auth ?? this.auth });
   }
 }

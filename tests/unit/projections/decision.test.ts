@@ -138,4 +138,59 @@ describe('DecisionProjection', () => {
     const totals = projection.voteTotals();
     expect(totals['p1']).toBe(1); // latest vote wins
   });
+
+  it('hasBlockingObjection only counts critical severity', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'opt' }), registry);
+    projection.applyEnvelope(
+      makeEnvelope('Objection', { proposalId: 'p1', reason: 'high concern', severity: 'high' }, 'bob'),
+      registry,
+    );
+    expect(projection.hasBlockingObjection('p1')).toBe(false);
+
+    projection.applyEnvelope(
+      makeEnvelope('Objection', { proposalId: 'p1', reason: 'critical issue', severity: 'critical' }, 'carol'),
+      registry,
+    );
+    expect(projection.hasBlockingObjection('p1')).toBe(true);
+  });
+
+  it('voteRatio excludes ABSTAIN from denominator', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'APPROVE' }, 'alice'), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'REJECT' }, 'bob'), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'ABSTAIN' }, 'carol'), registry);
+
+    // 1 approve / 2 non-abstain = 0.5
+    expect(projection.voteRatio('p1')).toBe(0.5);
+  });
+
+  it('voteRatio returns 0 when all abstain', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'ABSTAIN' }, 'alice'), registry);
+    expect(projection.voteRatio('p1')).toBe(0);
+  });
+
+  it('reviewEvaluations filters REVIEW recommendations', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'opt' }), registry);
+    projection.applyEnvelope(
+      makeEnvelope('Evaluation', { proposalId: 'p1', recommendation: 'REVIEW', confidence: 0.5 }, 'alice'),
+      registry,
+    );
+    projection.applyEnvelope(
+      makeEnvelope('Evaluation', { proposalId: 'p1', recommendation: 'APPROVE', confidence: 0.9 }, 'bob'),
+      registry,
+    );
+
+    expect(projection.reviewEvaluations()).toHaveLength(1);
+    expect(projection.qualifyingEvaluations()).toHaveLength(1);
+    expect(projection.qualifyingEvaluations()[0].sender).toBe('bob');
+  });
+
+  it('accepts UPPERCASE vote values', () => {
+    projection.applyEnvelope(makeEnvelope('Proposal', { proposalId: 'p1', option: 'a' }), registry);
+    projection.applyEnvelope(makeEnvelope('Vote', { proposalId: 'p1', vote: 'APPROVE' }, 'alice'), registry);
+
+    const totals = projection.voteTotals();
+    expect(totals['p1']).toBe(1);
+  });
 });

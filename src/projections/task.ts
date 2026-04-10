@@ -44,7 +44,7 @@ export class TaskProjection {
   readonly completions: TaskCompletionRecord[] = [];
   readonly failures: TaskFailureRecord[] = [];
   readonly transcript: Envelope[] = [];
-  phase: 'Requesting' | 'InProgress' | 'Completed' | 'Failed' | 'Committed' = 'Requesting';
+  phase: 'Pending' | 'Requested' | 'InProgress' | 'Completed' | 'Failed' | 'Committed' = 'Pending';
   commitment?: Record<string, unknown>;
 
   applyEnvelope(envelope: Envelope, protoRegistry: ProtoRegistry): void {
@@ -70,6 +70,7 @@ export class TaskProjection {
           progress: 0,
           sender: envelope.sender,
         });
+        this.phase = 'Requested';
         break;
       }
       case 'TaskAccept': {
@@ -133,6 +134,18 @@ export class TaskProjection {
     }
   }
 
+  get isCommitted(): boolean {
+    return this.commitment !== undefined;
+  }
+
+  get isPositiveOutcome(): boolean | undefined {
+    if (!this.commitment) return undefined;
+    const val =
+      (this.commitment as Record<string, unknown>).outcomePositive ??
+      (this.commitment as Record<string, unknown>).outcome_positive;
+    return val !== undefined ? Boolean(val) : true;
+  }
+
   getTask(taskId: string): TaskRecord | undefined {
     return this.tasks.get(taskId);
   }
@@ -156,5 +169,15 @@ export class TaskProjection {
   activeTasks(): TaskRecord[] {
     const active = new Set<TaskRecord['status']>(['requested', 'accepted', 'in_progress']);
     return [...this.tasks.values()].filter((t) => active.has(t.status));
+  }
+
+  isAccepted(taskId: string): boolean {
+    const status = this.tasks.get(taskId)?.status;
+    return status === 'accepted' || status === 'in_progress';
+  }
+
+  latestProgress(): number | undefined {
+    if (this.updates.length === 0) return undefined;
+    return this.updates[this.updates.length - 1].progress;
   }
 }

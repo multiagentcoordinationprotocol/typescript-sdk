@@ -51,6 +51,7 @@ const MODE_MAP: Record<string, Record<string, string>> = {
 const PROTO_FILES = [
   'macp/v1/core.proto',
   'macp/v1/envelope.proto',
+  'macp/v1/policy.proto',
   'macp/modes/decision/v1/decision.proto',
   'macp/modes/proposal/v1/proposal.proto',
   'macp/modes/task/v1/task.proto',
@@ -63,7 +64,9 @@ export class ProtoRegistry {
   private root: protobuf.Root;
 
   constructor(protoDir?: string) {
-    this.protoDir = path.resolve(protoDir ?? path.resolve(__dirname, '..', 'proto'));
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { protoDir: defaultProtoDir } = require('@multiagentcoordinationprotocol/proto');
+    this.protoDir = path.resolve(protoDir ?? defaultProtoDir);
     this.root = new protobuf.Root();
     this.root.resolvePath = (_origin, target) => {
       if (path.isAbsolute(target)) return target;
