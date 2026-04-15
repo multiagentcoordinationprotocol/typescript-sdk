@@ -49,6 +49,7 @@ export interface SessionMetadata {
   policyVersion?: string;
   participants?: string[];
   participantActivity?: ParticipantActivity[];
+  initiator?: string;
 }
 
 export interface ModeDescriptor {
@@ -114,6 +115,7 @@ export interface CommitmentPayload {
   modeVersion: string;
   policyVersion?: string;
   configurationVersion: string;
+  outcomePositive?: boolean;
 }
 
 export interface SignalPayload {
@@ -236,7 +238,7 @@ export interface TaskFailPayload {
 export interface HandoffOfferPayload {
   handoffId: string;
   targetParticipant: string;
-  scope: string;
+  scope?: string;
   reason?: string;
 }
 
@@ -282,12 +284,12 @@ export interface AbstainPayload {
 }
 
 export interface PolicyDescriptor {
-  policy_id: string;
+  policyId: string;
   mode: string;
   description: string;
   rules: Buffer | Uint8Array;
-  schema_version: number;
-  registered_at?: string;
+  schemaVersion: number;
+  registeredAtUnixMs?: number;
 }
 
 export interface RegistryChanged {

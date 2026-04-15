@@ -5,6 +5,7 @@ import { authSender, type AuthConfig, metadataFromAuth } from './auth';
 import { buildEnvelope } from './envelope';
 import { MacpAckError, MacpSdkError, MacpTransportError } from './errors';
 import { ProtoRegistry } from './proto-registry';
+import { validateSignalType } from './validation';
 import type {
   Ack,
   AgentManifest,
@@ -48,13 +49,23 @@ const STREAM_END = Symbol('stream-end');
 
 type StreamItem = Envelope | Error | typeof STREAM_END;
 
+export type InlineErrorCallback = (error: { code?: string; message?: string }) => void;
+
 export class MacpStream {
   private readonly queue = new AsyncQueue<StreamItem>();
   private closed = false;
+  private readonly inlineErrorCallbacks: InlineErrorCallback[] = [];
 
   constructor(private readonly call: grpc.ClientDuplexStream<any, any>) {
-    call.on('data', (chunk: { envelope?: Envelope }) => {
-      if (chunk?.envelope) this.queue.push(chunk.envelope);
+    call.on('data', (chunk: any) => {
+      // Support both old format (chunk.envelope) and new oneof format (chunk.response.envelope)
+      const envelope = chunk?.response?.envelope ?? chunk?.envelope;
+      if (envelope) {
+        this.queue.push(envelope);
+      } else if (chunk?.response?.error) {
+        // Inline application-level error — stream stays open
+        for (const cb of this.inlineErrorCallbacks) cb(chunk.response.error);
+      }
     });
     call.on('error', (error: grpc.ServiceError) => {
       this.queue.push(new MacpTransportError(error.details || error.message));
@@ -62,6 +73,10 @@ export class MacpStream {
     call.on('end', () => {
       this.queue.push(STREAM_END);
     });
+  }
+
+  onInlineError(callback: InlineErrorCallback): void {
+    this.inlineErrorCallbacks.push(callback);
   }
 
   send(envelope: Envelope): Promise<void> {
@@ -106,7 +121,7 @@ export class MacpClient {
     this.clientName = options.clientName ?? 'macp-sdk-typescript';
     this.clientVersion = options.clientVersion ?? '0.1.0';
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { protoDir: defaultProtoDir } = require('@macp/proto');
+    const { protoDir: defaultProtoDir } = require('@multiagentcoordinationprotocol/proto');
     const protoDir = options.protoDir ?? defaultProtoDir;
     this.protoRegistry = new ProtoRegistry(protoDir);
     const packageDefinition = protoLoader.loadSync(
@@ -208,6 +223,8 @@ export class MacpClient {
       options?.deadlineMs,
     );
     const ack = response.ack;
+    // Duplicate acks are success — the message was already accepted
+    if (ack?.duplicate) return ack;
     if (options?.raiseOnNack !== false && !ack?.ok) throw new MacpAckError(ack ?? {});
     return ack;
   }
@@ -223,12 +240,14 @@ export class MacpClient {
   async cancelSession(
     sessionId: string,
     reason: string,
-    options?: { auth?: AuthConfig; deadlineMs?: number; raiseOnNack?: boolean },
+    options?: { auth?: AuthConfig; deadlineMs?: number; raiseOnNack?: boolean; cancelledBy?: string },
   ): Promise<Ack> {
     const auth = this.requireAuth(options?.auth);
-    const response = await this.unary<{ sessionId: string; reason: string }, { ack: Ack }>(
+    const request: Record<string, string> = { sessionId, reason };
+    if (options?.cancelledBy) request.cancelledBy = options.cancelledBy;
+    const response = await this.unary<Record<string, string>, { ack: Ack }>(
       'CancelSession',
-      { sessionId, reason },
+      request,
       auth,
       options?.deadlineMs,
     );
@@ -258,7 +277,7 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<{ ok: boolean; error?: string }> {
     const auth = this.requireAuth(options?.auth);
-    return this.unary('RegisterExtMode', { descriptor }, auth, options?.deadlineMs) as Promise<{
+    return this.unary('RegisterExtMode', { modeDescriptor: descriptor }, auth, options?.deadlineMs) as Promise<{
       ok: boolean;
       error?: string;
     }>;
@@ -293,7 +312,7 @@ export class MacpClient {
     options?: { auth?: AuthConfig; deadlineMs?: number },
   ): Promise<{ ok: boolean; error?: string }> {
     const auth = this.requireAuth(options?.auth);
-    return this.unary('RegisterPolicy', { descriptor }, auth, options?.deadlineMs) as Promise<{
+    return this.unary('RegisterPolicy', { policyDescriptor: descriptor }, auth, options?.deadlineMs) as Promise<{
       ok: boolean;
       error?: string;
     }>;
@@ -312,13 +331,13 @@ export class MacpClient {
 
   async getPolicy(policyId: string, options?: { auth?: AuthConfig; deadlineMs?: number }): Promise<PolicyDescriptor> {
     const auth = this.requireAuth(options?.auth);
-    const res = await this.unary<{ policyId: string }, { descriptor: PolicyDescriptor }>(
+    const res = await this.unary<{ policyId: string }, { policyDescriptor: PolicyDescriptor }>(
       'GetPolicy',
       { policyId },
       auth,
       options?.deadlineMs,
     );
-    return res.descriptor;
+    return res.policyDescriptor;
   }
 
   async listPolicies(mode?: string, options?: { auth?: AuthConfig; deadlineMs?: number }): Promise<PolicyDescriptor[]> {
@@ -332,10 +351,14 @@ export class MacpClient {
     return res.descriptors || [];
   }
 
-  /** @internal Used by PolicyWatcher */
-  _watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+  watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchPolicies({}, metadata) : (this.client as any).WatchPolicies({});
+  }
+
+  /** @internal Backwards-compatible alias */
+  _watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    return this.watchPolicies(auth);
   }
 
   openStream(options?: { auth?: AuthConfig }): MacpStream {
@@ -345,22 +368,32 @@ export class MacpClient {
     return new MacpStream(call);
   }
 
-  /** @internal Used by ModeRegistryWatcher */
-  _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+  watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchModeRegistry({}, metadata) : (this.client as any).WatchModeRegistry({});
   }
 
-  /** @internal Used by RootsWatcher */
-  _watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+  watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchRoots({}, metadata) : (this.client as any).WatchRoots({});
   }
 
-  /** @internal Used by SignalWatcher */
-  _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+  watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     const metadata = this.metadata(auth);
     return metadata ? (this.client as any).WatchSignals({}, metadata) : (this.client as any).WatchSignals({});
+  }
+
+  /** @internal Backwards-compatible aliases */
+  _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    return this.watchModeRegistry(auth);
+  }
+
+  _watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    return this.watchRoots(auth);
+  }
+
+  _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    return this.watchSignals(auth);
   }
 
   async sendSignal(options: {
@@ -372,6 +405,7 @@ export class MacpClient {
     auth?: AuthConfig;
     deadlineMs?: number;
   }): Promise<Ack> {
+    validateSignalType(options.signalType, options.data);
     const auth = this.requireAuth(options.auth);
     const payload = this.protoRegistry.encodeKnownPayload('', 'Signal', {
       signalType: options.signalType,
@@ -390,8 +424,8 @@ export class MacpClient {
   }
 
   async sendProgress(options: {
-    sessionId: string;
-    mode: string;
+    sessionId?: string;
+    mode?: string;
     progressToken: string;
     progress: number;
     total: number;
@@ -410,9 +444,9 @@ export class MacpClient {
       targetMessageId: options.targetMessageId ?? '',
     });
     const envelope = buildEnvelope({
-      mode: options.mode,
+      mode: options.mode ?? '',
       messageType: 'Progress',
-      sessionId: options.sessionId,
+      sessionId: options.sessionId ?? '',
       sender: options.sender ?? this.senderHint(auth) ?? '',
       payload,
     });

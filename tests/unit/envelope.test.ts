@@ -7,6 +7,7 @@ import {
   newSessionId,
   newMessageId,
   newCommitmentId,
+  inferOutcomePositive,
 } from '../../src/envelope';
 import { MACP_VERSION } from '../../src/constants';
 
@@ -95,6 +96,56 @@ describe('envelope builders', () => {
         commitmentId: 'my-id',
       });
       expect(payload.commitmentId).toBe('my-id');
+    });
+
+    it('infers outcomePositive true for positive actions', () => {
+      const payload = buildCommitmentPayload({
+        action: 'proposal_accepted',
+        authorityScope: 'session',
+        reason: 'done',
+      });
+      expect(payload.outcomePositive).toBe(true);
+    });
+
+    it('infers outcomePositive false for negative actions', () => {
+      for (const action of ['proposal_rejected', 'task_failed', 'handoff_declined']) {
+        const payload = buildCommitmentPayload({
+          action,
+          authorityScope: 'session',
+          reason: 'done',
+        });
+        expect(payload.outcomePositive).toBe(false);
+      }
+    });
+
+    it('allows explicit outcomePositive override', () => {
+      const payload = buildCommitmentPayload({
+        action: 'proposal_rejected',
+        authorityScope: 'session',
+        reason: 'done',
+        outcomePositive: true,
+      });
+      expect(payload.outcomePositive).toBe(true);
+    });
+  });
+
+  describe('inferOutcomePositive', () => {
+    it('returns false for negative suffixes', () => {
+      expect(inferOutcomePositive('proposal_rejected')).toBe(false);
+      expect(inferOutcomePositive('task_failed')).toBe(false);
+      expect(inferOutcomePositive('handoff_declined')).toBe(false);
+    });
+
+    it('returns true for positive suffixes', () => {
+      expect(inferOutcomePositive('proposal_selected')).toBe(true);
+      expect(inferOutcomePositive('proposal_accepted')).toBe(true);
+      expect(inferOutcomePositive('task_completed')).toBe(true);
+      expect(inferOutcomePositive('request_approved')).toBe(true);
+    });
+
+    it('returns true for unknown action suffixes', () => {
+      expect(inferOutcomePositive('custom_action')).toBe(true);
+      expect(inferOutcomePositive('commit')).toBe(true);
     });
   });
 

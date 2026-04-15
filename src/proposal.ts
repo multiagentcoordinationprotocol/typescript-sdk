@@ -1,5 +1,5 @@
 import { authSender, type AuthConfig } from './auth';
-import type { MacpClient } from './client';
+import type { MacpClient, MacpStream } from './client';
 import {
   DEFAULT_CONFIGURATION_VERSION,
   DEFAULT_MODE_VERSION,
@@ -8,6 +8,7 @@ import {
 } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { ProposalProjection } from './projections/proposal';
+import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
   AcceptPayload,
   Ack,
@@ -38,6 +39,7 @@ export class ProposalSession {
 
   constructor(client: MacpClient, options: ProposalSessionOptions = {}) {
     this.client = client;
+    if (options.sessionId) validateSessionId(options.sessionId);
     this.sessionId = options.sessionId ?? newSessionId();
     this.modeVersion = options.modeVersion ?? DEFAULT_MODE_VERSION;
     this.configurationVersion = options.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION;
@@ -63,6 +65,13 @@ export class ProposalSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -88,6 +97,8 @@ export class ProposalSession {
   }
 
   async propose(input: ProposalModeProposalPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
+    validateRequiredField('title', input.title);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'Proposal',
@@ -103,6 +114,8 @@ export class ProposalSession {
   }
 
   async counterPropose(input: CounterProposalPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
+    validateRequiredField('title', input.title);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'CounterProposal',
@@ -118,6 +131,7 @@ export class ProposalSession {
   }
 
   async accept(input: AcceptPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'Accept',
@@ -133,6 +147,7 @@ export class ProposalSession {
   }
 
   async reject(input: RejectPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'Reject',
@@ -148,6 +163,7 @@ export class ProposalSession {
   }
 
   async withdraw(input: WithdrawPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
     const envelope = buildEnvelope({
       mode: MODE_PROPOSAL,
       messageType: 'Withdraw',
@@ -167,6 +183,7 @@ export class ProposalSession {
     authorityScope: string;
     reason: string;
     commitmentId?: string;
+    outcomePositive?: boolean;
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
@@ -175,6 +192,7 @@ export class ProposalSession {
       authorityScope: input.authorityScope,
       reason: input.reason,
       commitmentId: input.commitmentId,
+      outcomePositive: input.outcomePositive,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,
@@ -195,5 +213,16 @@ export class ProposalSession {
 
   metadata(auth?: AuthConfig): Promise<{ metadata: SessionMetadata }> {
     return this.client.getSession(this.sessionId, { auth: auth ?? this.auth });
+  }
+
+  async cancel(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.cancelSession(this.sessionId, reason, {
+      auth: auth ?? this.auth,
+      raiseOnNack: true,
+    });
+  }
+
+  openStream(auth?: AuthConfig): MacpStream {
+    return this.client.openStream({ auth: auth ?? this.auth });
   }
 }

@@ -1,4 +1,5 @@
 import type { DecisionProjection } from '../projections/decision';
+import { inferOutcomePositive } from '../envelope';
 import type { HandlerContext, IncomingMessage, MessageHandler, SessionInfo } from './types';
 
 // ── Evaluation strategy ─────────────────────────────────────────────
@@ -79,10 +80,10 @@ export function majorityVoter(options?: { positiveThreshold?: number }): VotingS
       );
       const ratio = projection.evaluations.length > 0 ? positive.length / projection.evaluations.length : 0;
       if (ratio >= threshold) {
-        return { vote: 'approve', reason: `${positive.length}/${projection.evaluations.length} evaluations positive` };
+        return { vote: 'APPROVE', reason: `${positive.length}/${projection.evaluations.length} evaluations positive` };
       }
       return {
-        vote: 'reject',
+        vote: 'REJECT',
         reason: `Only ${positive.length}/${projection.evaluations.length} evaluations positive`,
       };
     },
@@ -95,6 +96,7 @@ export interface CommitmentResult {
   action: string;
   authorityScope: string;
   reason: string;
+  outcomePositive?: boolean;
 }
 
 export interface CommitmentStrategy {
@@ -115,6 +117,7 @@ export function commitmentHandler(strategy: CommitmentStrategy): MessageHandler 
         action: result.action,
         authorityScope: result.authorityScope,
         reason: result.reason,
+        outcomePositive: result.outcomePositive ?? inferOutcomePositive(result.action),
       });
     }
   };
@@ -142,6 +145,7 @@ export function majorityCommitter(options?: {
         action,
         authorityScope,
         reason: proposal ? `Majority selected: ${proposal.option}` : 'Majority reached',
+        outcomePositive: inferOutcomePositive(action),
       };
     },
   };

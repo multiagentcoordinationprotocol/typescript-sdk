@@ -1,5 +1,5 @@
 import { authSender, type AuthConfig } from './auth';
-import type { MacpClient } from './client';
+import type { MacpClient, MacpStream } from './client';
 import {
   DEFAULT_CONFIGURATION_VERSION,
   DEFAULT_MODE_VERSION,
@@ -8,6 +8,15 @@ import {
 } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { DecisionProjection } from './projections';
+import {
+  validateConfidence,
+  validateRecommendation,
+  validateRequiredField,
+  validateSessionId,
+  validateSessionStart,
+  validateSeverity,
+  validateVote,
+} from './validation';
 import type {
   Ack,
   DecisionEvaluationPayload,
@@ -37,6 +46,7 @@ export class DecisionSession {
 
   constructor(client: MacpClient, options: DecisionSessionOptions = {}) {
     this.client = client;
+    if (options.sessionId) validateSessionId(options.sessionId);
     this.sessionId = options.sessionId ?? newSessionId();
     this.modeVersion = options.modeVersion ?? DEFAULT_MODE_VERSION;
     this.configurationVersion = options.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION;
@@ -62,6 +72,13 @@ export class DecisionSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -87,6 +104,8 @@ export class DecisionSession {
   }
 
   async propose(input: DecisionProposalPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
+    validateRequiredField('option', input.option);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Proposal',
@@ -102,6 +121,9 @@ export class DecisionSession {
   }
 
   async evaluate(input: DecisionEvaluationPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
+    validateRecommendation(input.recommendation);
+    validateConfidence(input.confidence);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Evaluation',
@@ -117,6 +139,8 @@ export class DecisionSession {
   }
 
   async raiseObjection(input: DecisionObjectionPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
+    if (input.severity) validateSeverity(input.severity);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Objection',
@@ -132,6 +156,8 @@ export class DecisionSession {
   }
 
   async vote(input: DecisionVotePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('proposalId', input.proposalId);
+    validateVote(input.vote);
     const envelope = buildEnvelope({
       mode: MODE_DECISION,
       messageType: 'Vote',
@@ -151,6 +177,7 @@ export class DecisionSession {
     authorityScope: string;
     reason: string;
     commitmentId?: string;
+    outcomePositive?: boolean;
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
@@ -159,6 +186,7 @@ export class DecisionSession {
       authorityScope: input.authorityScope,
       reason: input.reason,
       commitmentId: input.commitmentId,
+      outcomePositive: input.outcomePositive,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,
@@ -179,5 +207,16 @@ export class DecisionSession {
 
   metadata(auth?: AuthConfig): Promise<{ metadata: SessionMetadata }> {
     return this.client.getSession(this.sessionId, { auth: auth ?? this.auth });
+  }
+
+  async cancel(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.cancelSession(this.sessionId, reason, {
+      auth: auth ?? this.auth,
+      raiseOnNack: true,
+    });
+  }
+
+  openStream(auth?: AuthConfig): MacpStream {
+    return this.client.openStream({ auth: auth ?? this.auth });
   }
 }

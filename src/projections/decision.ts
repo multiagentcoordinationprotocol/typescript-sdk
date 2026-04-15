@@ -84,6 +84,18 @@ export class DecisionProjection {
     }
   }
 
+  get isCommitted(): boolean {
+    return this.commitment !== undefined;
+  }
+
+  get isPositiveOutcome(): boolean | undefined {
+    if (!this.commitment) return undefined;
+    const val =
+      (this.commitment as Record<string, unknown>).outcomePositive ??
+      (this.commitment as Record<string, unknown>).outcome_positive;
+    return val !== undefined ? Boolean(val) : true;
+  }
+
   voteTotals(): Record<string, number> {
     const totals: Record<string, number> = {};
     for (const [proposalId, senderVotes] of this.votes.entries()) {
@@ -93,17 +105,64 @@ export class DecisionProjection {
   }
 
   majorityWinner(): string | undefined {
-    const entries = Object.entries(this.voteTotals());
+    const totals = this.voteTotals();
+    const entries = Object.entries(totals);
     if (!entries.length) return undefined;
-    return entries.sort((a, b) => b[1] - a[1])[0]?.[0];
+    // Count total non-abstain votes across all proposals
+    let nonAbstain = 0;
+    for (const senderVotes of this.votes.values()) {
+      for (const vote of senderVotes.values()) {
+        if (vote.vote.toUpperCase() !== 'ABSTAIN') {
+          nonAbstain++;
+        }
+      }
+    }
+    if (nonAbstain === 0) return undefined;
+    for (const [proposalId, count] of entries) {
+      if (count / nonAbstain > 0.5) return proposalId;
+    }
+    return undefined;
   }
 
-  hasBlockingObjection(proposalId: string): boolean {
-    const blocking = new Set(['high', 'critical', 'block']);
-    return this.objections.some((item) => item.proposalId === proposalId && blocking.has(item.severity.toLowerCase()));
+  /** Returns the APPROVE vote ratio excluding ABSTAIN votes from the denominator. */
+  voteRatio(proposalId: string): number {
+    const senderVotes = this.votes.get(proposalId);
+    if (!senderVotes) return 0;
+    const votes = [...senderVotes.values()];
+    const nonAbstain = votes.filter((v) => v.vote.toUpperCase() !== 'ABSTAIN');
+    if (nonAbstain.length === 0) return 0;
+    const approvals = nonAbstain.filter((v) => isPositiveVote(v.vote)).length;
+    return approvals / nonAbstain.length;
+  }
+
+  /** Only critical-severity objections are blocking per RFC-MACP-0004. */
+  hasBlockingObjection(proposalId?: string): boolean {
+    if (proposalId !== undefined) {
+      return this.objections.some(
+        (item) => item.proposalId === proposalId && item.severity.toLowerCase() === 'critical',
+      );
+    }
+    return this.objections.some((item) => item.severity.toLowerCase() === 'critical');
+  }
+
+  /** Evaluations with REVIEW recommendation (informational only). */
+  reviewEvaluations(): DecisionEvaluationRecord[] {
+    return this.evaluations.filter((e) => e.recommendation.toUpperCase() === 'REVIEW');
+  }
+
+  /** Evaluations excluding REVIEW (qualifying evaluations). */
+  qualifyingEvaluations(): DecisionEvaluationRecord[] {
+    return this.evaluations.filter((e) => e.recommendation.toUpperCase() !== 'REVIEW');
   }
 }
 
 function isPositiveVote(vote: string): boolean {
-  return new Set(['approve', 'approved', 'yes', 'accept', 'accepted']).has(vote.trim().toLowerCase());
+  const normalized = vote.trim().toUpperCase();
+  return (
+    normalized === 'APPROVE' ||
+    normalized === 'APPROVED' ||
+    normalized === 'YES' ||
+    normalized === 'ACCEPT' ||
+    normalized === 'ACCEPTED'
+  );
 }

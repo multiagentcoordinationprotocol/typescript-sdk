@@ -26,6 +26,7 @@ export interface ParticipantConfig {
   mode: string;
   client: MacpClient;
   auth?: AuthConfig;
+  participants?: string[];
   modeVersion?: string;
   configurationVersion?: string;
   policyVersion?: string;
@@ -254,7 +255,13 @@ export class Participant {
           await this.dispatcher.dispatchPhaseChange(currentPhase, ctx);
 
           // Check for terminal state
-          if (currentPhase === 'Committed' || currentPhase === 'Resolved' || currentPhase === 'Cancelled') {
+          if (
+            currentPhase === 'Committed' ||
+            currentPhase === 'Accepted' ||
+            currentPhase === 'Declined' ||
+            currentPhase === 'Cancelled' ||
+            currentPhase === 'TerminalRejected'
+          ) {
             const terminalResult: TerminalResult = {
               state: currentPhase,
               commitment: (this.projection as { commitment?: Record<string, unknown> }).commitment,

@@ -65,7 +65,7 @@ export class ProtoRegistry {
 
   constructor(protoDir?: string) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { protoDir: defaultProtoDir } = require('@macp/proto');
+    const { protoDir: defaultProtoDir } = require('@multiagentcoordinationprotocol/proto');
     this.protoDir = path.resolve(protoDir ?? defaultProtoDir);
     this.root = new protobuf.Root();
     this.root.resolvePath = (_origin, target) => {

@@ -199,7 +199,7 @@ describe('strategies', () => {
       );
 
       const result = await voter.decideVote(projection);
-      expect(result.vote).toBe('approve');
+      expect(result.vote).toBe('APPROVE');
     });
 
     it('votes reject when majority evaluations are negative', async () => {
@@ -212,7 +212,7 @@ describe('strategies', () => {
       );
 
       const result = await voter.decideVote(projection);
-      expect(result.vote).toBe('reject');
+      expect(result.vote).toBe('REJECT');
     });
 
     it('respects custom positiveThreshold', async () => {
@@ -226,7 +226,7 @@ describe('strategies', () => {
 
       // 2/3 = 0.67, below 0.8 threshold
       const result = await voter.decideVote(projection);
-      expect(result.vote).toBe('reject');
+      expect(result.vote).toBe('REJECT');
     });
   });
 
@@ -251,6 +251,7 @@ describe('strategies', () => {
         action: 'deploy',
         authorityScope: 'ops',
         reason: 'Approved by majority',
+        outcomePositive: true,
       });
     });
 

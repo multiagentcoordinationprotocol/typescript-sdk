@@ -7,202 +7,268 @@ import {
   buildHandoffPolicy,
 } from '../../src/policy';
 
+function parseRules(descriptor: { rules: Buffer | Uint8Array }): Record<string, unknown> {
+  return JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
+}
+
 describe('policy builders', () => {
   describe('buildDecisionPolicy', () => {
-    it('builds a descriptor with correct mode and schema_version', () => {
+    it('builds a descriptor with correct mode and schemaVersion', () => {
       const descriptor = buildDecisionPolicy('policy.test', 'Test policy', {});
-      expect(descriptor.policy_id).toBe('policy.test');
+      expect(descriptor.policyId).toBe('policy.test');
       expect(descriptor.mode).toBe('macp.mode.decision.v1');
       expect(descriptor.description).toBe('Test policy');
-      expect(descriptor.schema_version).toBe(1);
+      expect(descriptor.schemaVersion).toBe(1);
     });
 
     it('includes default voting rules', () => {
-      const descriptor = buildDecisionPolicy('p1', 'desc', {});
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.voting.algorithm).toBe('none');
-      expect(rules.voting.threshold).toBe(0);
+      const rules = parseRules(buildDecisionPolicy('p1', 'desc', {}));
+      expect(rules.voting).toEqual(expect.objectContaining({ algorithm: 'none', threshold: 0.5 }));
     });
 
     it('includes custom voting rules', () => {
-      const descriptor = buildDecisionPolicy('p1', 'desc', {
-        voting: {
+      const rules = parseRules(
+        buildDecisionPolicy('p1', 'desc', {
+          voting: {
+            algorithm: 'majority',
+            threshold: 0.6,
+            quorum: { type: 'count', value: 3 },
+            weights: { 'agent-a': 2, 'agent-b': 1 },
+          },
+        }),
+      );
+      expect(rules.voting).toEqual(
+        expect.objectContaining({
           algorithm: 'majority',
           threshold: 0.6,
           quorum: { type: 'count', value: 3 },
           weights: { 'agent-a': 2, 'agent-b': 1 },
-        },
-      });
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.voting.algorithm).toBe('majority');
-      expect(rules.voting.threshold).toBe(0.6);
-      expect(rules.voting.quorum).toEqual({ type: 'count', value: 3 });
-      expect(rules.voting.weights).toEqual({ 'agent-a': 2, 'agent-b': 1 });
+        }),
+      );
     });
 
     it('includes objection handling rules', () => {
-      const descriptor = buildDecisionPolicy('p1', 'desc', {
-        objectionHandling: { blockSeverityVetoes: false, vetoThreshold: 2 },
+      const rules = parseRules(
+        buildDecisionPolicy('p1', 'desc', {
+          objectionHandling: { criticalSeverityVetoes: false, vetoThreshold: 2 },
+        }),
+      );
+      expect(rules.objection_handling).toEqual({
+        critical_severity_vetoes: false,
+        veto_threshold: 2,
       });
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.objection_handling.block_severity_vetoes).toBe(false);
-      expect(rules.objection_handling.veto_threshold).toBe(2);
     });
 
     it('includes evaluation rules', () => {
-      const descriptor = buildDecisionPolicy('p1', 'desc', {
-        evaluation: { minimumConfidence: 0.8, requiredBeforeVoting: true },
+      const rules = parseRules(
+        buildDecisionPolicy('p1', 'desc', {
+          evaluation: { minimumConfidence: 0.8, requiredBeforeVoting: true },
+        }),
+      );
+      expect(rules.evaluation).toEqual({
+        minimum_confidence: 0.8,
+        required_before_voting: true,
       });
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.evaluation.minimum_confidence).toBe(0.8);
-      expect(rules.evaluation.required_before_voting).toBe(true);
     });
 
-    it('includes commitment rules', () => {
-      const descriptor = buildDecisionPolicy('p1', 'desc', {
-        commitment: {
-          authority: 'designated_role',
-          designatedRoles: ['admin'],
-          requireVoteQuorum: true,
-        },
+    it('includes commitment rules with designated_roles', () => {
+      const rules = parseRules(
+        buildDecisionPolicy('p1', 'desc', {
+          commitment: {
+            authority: 'designated_role',
+            designatedRoles: ['admin'],
+            requireVoteQuorum: true,
+          },
+        }),
+      );
+      expect(rules.commitment).toEqual({
+        authority: 'designated_role',
+        designated_roles: ['admin'],
+        require_vote_quorum: true,
       });
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.commitment.authority).toBe('designated_role');
-      expect(rules.commitment.designated_roles).toEqual(['admin']);
-      expect(rules.commitment.require_vote_quorum).toBe(true);
     });
 
     it('uses default objection handling values', () => {
-      const descriptor = buildDecisionPolicy('p1', 'desc', {});
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.objection_handling.block_severity_vetoes).toBe(true);
-      expect(rules.objection_handling.veto_threshold).toBe(1);
+      const rules = parseRules(buildDecisionPolicy('p1', 'desc', {}));
+      expect(rules.objection_handling).toEqual({
+        critical_severity_vetoes: false,
+        veto_threshold: 1,
+      });
     });
 
     it('uses default commitment values', () => {
-      const descriptor = buildDecisionPolicy('p1', 'desc', {});
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.commitment.authority).toBe('initiator_only');
-      expect(rules.commitment.designated_roles).toEqual([]);
-      expect(rules.commitment.require_vote_quorum).toBe(false);
+      const rules = parseRules(buildDecisionPolicy('p1', 'desc', {}));
+      expect(rules.commitment).toEqual({
+        authority: 'initiator_only',
+        designated_roles: [],
+        require_vote_quorum: false,
+      });
     });
   });
 
-  describe('buildQuorumPolicy', () => {
+  describe('buildQuorumPolicy (RFC-MACP-0012 §4.2)', () => {
     it('builds with correct mode', () => {
       const descriptor = buildQuorumPolicy('q1', 'Quorum policy', {});
       expect(descriptor.mode).toBe('macp.mode.quorum.v1');
-      expect(descriptor.schema_version).toBe(1);
+      expect(descriptor.schemaVersion).toBe(1);
     });
 
-    it('includes custom rules', () => {
-      const descriptor = buildQuorumPolicy('q1', 'desc', {
-        requiredApprovals: 3,
-        quorum: { type: 'percentage', value: 75 },
-        allowAbstain: false,
-        timeoutMs: 30000,
+    it('uses RFC default values', () => {
+      const rules = parseRules(buildQuorumPolicy('q1', 'desc', {}));
+      expect(rules.threshold).toEqual({ type: 'n_of_m', value: 0 });
+      expect(rules.abstention).toEqual({
+        counts_toward_quorum: false,
+        interpretation: 'neutral',
       });
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.required_approvals).toBe(3);
-      expect(rules.quorum).toEqual({ type: 'percentage', value: 75 });
-      expect(rules.allow_abstain).toBe(false);
-      expect(rules.timeout_ms).toBe(30000);
+      expect(rules.commitment).toEqual({
+        authority: 'initiator_only',
+        designated_roles: [],
+      });
     });
 
-    it('uses default values', () => {
-      const descriptor = buildQuorumPolicy('q1', 'desc', {});
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.required_approvals).toBe(1);
-      expect(rules.allow_abstain).toBe(true);
-      expect(rules.timeout_ms).toBe(0);
+    it('includes custom threshold', () => {
+      const rules = parseRules(
+        buildQuorumPolicy('q1', 'desc', {
+          threshold: { type: 'percentage', value: 0.75 },
+        }),
+      );
+      expect(rules.threshold).toEqual({ type: 'percentage', value: 0.75 });
+    });
+
+    it('includes custom abstention rules', () => {
+      const rules = parseRules(
+        buildQuorumPolicy('q1', 'desc', {
+          abstention: { countsTowardQuorum: true, interpretation: 'implicit_reject' },
+        }),
+      );
+      expect(rules.abstention).toEqual({
+        counts_toward_quorum: true,
+        interpretation: 'implicit_reject',
+      });
+    });
+
+    it('includes weighted threshold', () => {
+      const rules = parseRules(
+        buildQuorumPolicy('q1', 'desc', {
+          threshold: { type: 'weighted', value: 10 },
+        }),
+      );
+      expect(rules.threshold).toEqual({ type: 'weighted', value: 10 });
+    });
+
+    it('includes commitment with designated roles', () => {
+      const rules = parseRules(
+        buildQuorumPolicy('q1', 'desc', {
+          commitment: { authority: 'designated_role', designatedRoles: ['lead'] },
+        }),
+      );
+      expect(rules.commitment).toEqual({
+        authority: 'designated_role',
+        designated_roles: ['lead'],
+      });
     });
   });
 
-  describe('buildProposalPolicy', () => {
+  describe('buildProposalPolicy (RFC-MACP-0012 §4.3)', () => {
     it('builds with correct mode', () => {
       const descriptor = buildProposalPolicy('pr1', 'Proposal policy', {});
       expect(descriptor.mode).toBe('macp.mode.proposal.v1');
     });
 
-    it('includes custom rules', () => {
-      const descriptor = buildProposalPolicy('pr1', 'desc', {
-        maxCounterProposals: 5,
-        requireRationale: true,
-        timeoutMs: 60000,
-        allowWithdraw: false,
+    it('uses RFC default values', () => {
+      const rules = parseRules(buildProposalPolicy('pr1', 'desc', {}));
+      expect(rules.acceptance).toEqual({ criterion: 'all_parties' });
+      expect(rules.counter_proposal).toEqual({ max_rounds: 0 });
+      expect(rules.rejection).toEqual({ terminal_on_any_reject: false });
+      expect(rules.commitment).toEqual({
+        authority: 'initiator_only',
+        designated_roles: [],
       });
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.max_counter_proposals).toBe(5);
-      expect(rules.require_rationale).toBe(true);
-      expect(rules.timeout_ms).toBe(60000);
-      expect(rules.allow_withdraw).toBe(false);
     });
 
-    it('uses default values', () => {
-      const descriptor = buildProposalPolicy('pr1', 'desc', {});
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.max_counter_proposals).toBe(3);
-      expect(rules.require_rationale).toBe(false);
-      expect(rules.allow_withdraw).toBe(true);
+    it('includes custom acceptance criterion', () => {
+      const rules = parseRules(
+        buildProposalPolicy('pr1', 'desc', {
+          acceptance: { criterion: 'counterparty' },
+        }),
+      );
+      expect(rules.acceptance).toEqual({ criterion: 'counterparty' });
+    });
+
+    it('includes counter-proposal limits and rejection rules', () => {
+      const rules = parseRules(
+        buildProposalPolicy('pr1', 'desc', {
+          counterProposal: { maxRounds: 5 },
+          rejection: { terminalOnAnyReject: true },
+        }),
+      );
+      expect(rules.counter_proposal).toEqual({ max_rounds: 5 });
+      expect(rules.rejection).toEqual({ terminal_on_any_reject: true });
     });
   });
 
-  describe('buildTaskPolicy', () => {
+  describe('buildTaskPolicy (RFC-MACP-0012 §4.4)', () => {
     it('builds with correct mode', () => {
       const descriptor = buildTaskPolicy('t1', 'Task policy', {});
       expect(descriptor.mode).toBe('macp.mode.task.v1');
     });
 
-    it('includes custom rules', () => {
-      const descriptor = buildTaskPolicy('t1', 'desc', {
-        maxRetries: 3,
-        timeoutMs: 120000,
-        requireAcceptance: false,
-        allowReassignment: true,
+    it('uses RFC default values', () => {
+      const rules = parseRules(buildTaskPolicy('t1', 'desc', {}));
+      expect(rules.assignment).toEqual({ allow_reassignment_on_reject: false });
+      expect(rules.completion).toEqual({ require_output: false });
+      expect(rules.commitment).toEqual({
+        authority: 'initiator_only',
+        designated_roles: [],
       });
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.max_retries).toBe(3);
-      expect(rules.timeout_ms).toBe(120000);
-      expect(rules.require_acceptance).toBe(false);
-      expect(rules.allow_reassignment).toBe(true);
     });
 
-    it('uses default values', () => {
-      const descriptor = buildTaskPolicy('t1', 'desc', {});
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.max_retries).toBe(0);
-      expect(rules.require_acceptance).toBe(true);
-      expect(rules.allow_reassignment).toBe(false);
+    it('includes custom assignment and completion rules', () => {
+      const rules = parseRules(
+        buildTaskPolicy('t1', 'desc', {
+          assignment: { allowReassignmentOnReject: true },
+          completion: { requireOutput: true },
+        }),
+      );
+      expect(rules.assignment).toEqual({ allow_reassignment_on_reject: true });
+      expect(rules.completion).toEqual({ require_output: true });
     });
   });
 
-  describe('buildHandoffPolicy', () => {
+  describe('buildHandoffPolicy (RFC-MACP-0012 §4.5)', () => {
     it('builds with correct mode', () => {
       const descriptor = buildHandoffPolicy('h1', 'Handoff policy', {});
       expect(descriptor.mode).toBe('macp.mode.handoff.v1');
     });
 
-    it('includes custom rules', () => {
-      const descriptor = buildHandoffPolicy('h1', 'desc', {
-        requireContext: true,
-        allowDecline: false,
-        timeoutMs: 15000,
-        maxDeclines: 1,
+    it('uses RFC default values', () => {
+      const rules = parseRules(buildHandoffPolicy('h1', 'desc', {}));
+      expect(rules.acceptance).toEqual({ implicit_accept_timeout_ms: 0 });
+      expect(rules.commitment).toEqual({
+        authority: 'initiator_only',
+        designated_roles: [],
       });
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.require_context).toBe(true);
-      expect(rules.allow_decline).toBe(false);
-      expect(rules.timeout_ms).toBe(15000);
-      expect(rules.max_declines).toBe(1);
     });
 
-    it('uses default values', () => {
-      const descriptor = buildHandoffPolicy('h1', 'desc', {});
-      const rules = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(rules.require_context).toBe(false);
-      expect(rules.allow_decline).toBe(true);
-      expect(rules.timeout_ms).toBe(0);
-      expect(rules.max_declines).toBe(3);
+    it('includes custom implicit accept timeout', () => {
+      const rules = parseRules(
+        buildHandoffPolicy('h1', 'desc', {
+          acceptance: { implicitAcceptTimeoutMs: 15000 },
+        }),
+      );
+      expect(rules.acceptance).toEqual({ implicit_accept_timeout_ms: 15000 });
+    });
+
+    it('includes commitment with any_participant authority', () => {
+      const rules = parseRules(
+        buildHandoffPolicy('h1', 'desc', {
+          commitment: { authority: 'any_participant' },
+        }),
+      );
+      expect(rules.commitment).toEqual({
+        authority: 'any_participant',
+        designated_roles: [],
+      });
     });
   });
 
@@ -214,8 +280,8 @@ describe('policy builders', () => {
 
     it('rules can be parsed as JSON', () => {
       const descriptor = buildDecisionPolicy('p1', 'desc', { voting: { algorithm: 'unanimous' } });
-      const parsed = JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
-      expect(parsed.voting.algorithm).toBe('unanimous');
+      const parsed = parseRules(descriptor);
+      expect((parsed.voting as Record<string, unknown>).algorithm).toBe('unanimous');
     });
 
     it('registered_at is undefined by default', () => {

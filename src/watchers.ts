@@ -164,7 +164,7 @@ export class SignalWatcher {
 
 export interface PolicyChange {
   descriptors: PolicyDescriptor[];
-  observedAtUnixMs: string;
+  observedAtUnixMs: number;
 }
 
 export class PolicyWatcher {

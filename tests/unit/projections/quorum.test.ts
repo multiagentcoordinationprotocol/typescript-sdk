@@ -136,4 +136,28 @@ describe('QuorumProjection', () => {
     expect(projection.votedSenders('nope')).toEqual([]);
     expect(projection.hasQuorum('nope')).toBe(false);
   });
+
+  it('commitmentReady returns true when quorum reached and not yet committed', () => {
+    projection.applyEnvelope(
+      makeEnvelope('ApprovalRequest', { requestId: 'r1', action: 'deploy', summary: 'release', requiredApprovals: 1 }),
+      registry,
+    );
+    expect(projection.commitmentReady('r1')).toBe(false);
+
+    projection.applyEnvelope(makeEnvelope('Approve', { requestId: 'r1' }, 'alice'), registry);
+    expect(projection.commitmentReady('r1')).toBe(true);
+
+    projection.applyEnvelope(
+      makeEnvelope('Commitment', {
+        commitmentId: 'c1',
+        action: 'quorum.approved',
+        authorityScope: 'team',
+        reason: 'approved',
+        modeVersion: '1.0.0',
+        configurationVersion: 'config.default',
+      }),
+      registry,
+    );
+    expect(projection.commitmentReady('r1')).toBe(false);
+  });
 });

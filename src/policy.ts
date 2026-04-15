@@ -1,5 +1,19 @@
 import type { PolicyDescriptor } from './types';
 
+// ── Shared commitment rules (used by all modes) ───────────────────
+
+export interface CommitmentRulesInput {
+  authority?: 'initiator_only' | 'any_participant' | 'designated_role';
+  designatedRoles?: string[];
+}
+
+function serializeCommitment(commitment?: CommitmentRulesInput): Record<string, unknown> {
+  return {
+    authority: commitment?.authority ?? 'initiator_only',
+    designated_roles: commitment?.designatedRoles ?? [],
+  };
+}
+
 // ── Decision policy rule types ──────────────────────────────────────
 
 export interface DecisionVotingRules {
@@ -10,7 +24,7 @@ export interface DecisionVotingRules {
 }
 
 export interface DecisionObjectionHandling {
-  blockSeverityVetoes?: boolean;
+  criticalSeverityVetoes?: boolean;
   vetoThreshold?: number;
 }
 
@@ -32,40 +46,39 @@ export interface DecisionPolicyRulesInput {
   commitment?: DecisionCommitmentRules;
 }
 
-// ── Quorum policy rule types ────────────────────────────────────────
+// ── Quorum policy rule types (RFC-MACP-0012 §4.2) ─────────────────
 
 export interface QuorumPolicyRulesInput {
-  requiredApprovals?: number;
-  quorum?: { type: 'count' | 'percentage'; value: number };
-  allowAbstain?: boolean;
-  timeoutMs?: number;
+  threshold?: { type: 'n_of_m' | 'percentage' | 'weighted'; value: number };
+  abstention?: {
+    countsTowardQuorum?: boolean;
+    interpretation?: 'neutral' | 'implicit_reject' | 'ignored';
+  };
+  commitment?: CommitmentRulesInput;
 }
 
-// ── Proposal policy rule types ──────────────────────────────────────
+// ── Proposal policy rule types (RFC-MACP-0012 §4.3) ───────────────
 
 export interface ProposalPolicyRulesInput {
-  maxCounterProposals?: number;
-  requireRationale?: boolean;
-  timeoutMs?: number;
-  allowWithdraw?: boolean;
+  acceptance?: { criterion?: 'all_parties' | 'counterparty' | 'initiator' };
+  counterProposal?: { maxRounds?: number };
+  rejection?: { terminalOnAnyReject?: boolean };
+  commitment?: CommitmentRulesInput;
 }
 
-// ── Task policy rule types ──────────────────────────────────────────
+// ── Task policy rule types (RFC-MACP-0012 §4.4) ───────────────────
 
 export interface TaskPolicyRulesInput {
-  maxRetries?: number;
-  timeoutMs?: number;
-  requireAcceptance?: boolean;
-  allowReassignment?: boolean;
+  assignment?: { allowReassignmentOnReject?: boolean };
+  completion?: { requireOutput?: boolean };
+  commitment?: CommitmentRulesInput;
 }
 
-// ── Handoff policy rule types ───────────────────────────────────────
+// ── Handoff policy rule types (RFC-MACP-0012 §4.5) ────────────────
 
 export interface HandoffPolicyRulesInput {
-  requireContext?: boolean;
-  allowDecline?: boolean;
-  timeoutMs?: number;
-  maxDeclines?: number;
+  acceptance?: { implicitAcceptTimeoutMs?: number };
+  commitment?: CommitmentRulesInput;
 }
 
 // ── Builder helpers ─────────────────────────────────────────────────
@@ -78,12 +91,12 @@ export function buildDecisionPolicy(
   const rulesJson: Record<string, unknown> = {
     voting: {
       algorithm: rules.voting?.algorithm ?? 'none',
-      threshold: rules.voting?.threshold ?? 0,
+      threshold: rules.voting?.threshold ?? 0.5,
       quorum: rules.voting?.quorum ? { type: rules.voting.quorum.type, value: rules.voting.quorum.value } : undefined,
       weights: rules.voting?.weights ?? undefined,
     },
     objection_handling: {
-      block_severity_vetoes: rules.objectionHandling?.blockSeverityVetoes ?? true,
+      critical_severity_vetoes: rules.objectionHandling?.criticalSeverityVetoes ?? false,
       veto_threshold: rules.objectionHandling?.vetoThreshold ?? 1,
     },
     evaluation: {
@@ -97,11 +110,11 @@ export function buildDecisionPolicy(
     },
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.decision.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }
 
@@ -111,17 +124,22 @@ export function buildQuorumPolicy(
   rules: QuorumPolicyRulesInput,
 ): PolicyDescriptor {
   const rulesJson: Record<string, unknown> = {
-    required_approvals: rules.requiredApprovals ?? 1,
-    quorum: rules.quorum ? { type: rules.quorum.type, value: rules.quorum.value } : undefined,
-    allow_abstain: rules.allowAbstain ?? true,
-    timeout_ms: rules.timeoutMs ?? 0,
+    threshold: {
+      type: rules.threshold?.type ?? 'n_of_m',
+      value: rules.threshold?.value ?? 0,
+    },
+    abstention: {
+      counts_toward_quorum: rules.abstention?.countsTowardQuorum ?? false,
+      interpretation: rules.abstention?.interpretation ?? 'neutral',
+    },
+    commitment: serializeCommitment(rules.commitment),
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.quorum.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }
 
@@ -131,33 +149,42 @@ export function buildProposalPolicy(
   rules: ProposalPolicyRulesInput,
 ): PolicyDescriptor {
   const rulesJson: Record<string, unknown> = {
-    max_counter_proposals: rules.maxCounterProposals ?? 3,
-    require_rationale: rules.requireRationale ?? false,
-    timeout_ms: rules.timeoutMs ?? 0,
-    allow_withdraw: rules.allowWithdraw ?? true,
+    acceptance: {
+      criterion: rules.acceptance?.criterion ?? 'all_parties',
+    },
+    counter_proposal: {
+      max_rounds: rules.counterProposal?.maxRounds ?? 0,
+    },
+    rejection: {
+      terminal_on_any_reject: rules.rejection?.terminalOnAnyReject ?? false,
+    },
+    commitment: serializeCommitment(rules.commitment),
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.proposal.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }
 
 export function buildTaskPolicy(policyId: string, description: string, rules: TaskPolicyRulesInput): PolicyDescriptor {
   const rulesJson: Record<string, unknown> = {
-    max_retries: rules.maxRetries ?? 0,
-    timeout_ms: rules.timeoutMs ?? 0,
-    require_acceptance: rules.requireAcceptance ?? true,
-    allow_reassignment: rules.allowReassignment ?? false,
+    assignment: {
+      allow_reassignment_on_reject: rules.assignment?.allowReassignmentOnReject ?? false,
+    },
+    completion: {
+      require_output: rules.completion?.requireOutput ?? false,
+    },
+    commitment: serializeCommitment(rules.commitment),
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.task.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }
 
@@ -167,16 +194,16 @@ export function buildHandoffPolicy(
   rules: HandoffPolicyRulesInput,
 ): PolicyDescriptor {
   const rulesJson: Record<string, unknown> = {
-    require_context: rules.requireContext ?? false,
-    allow_decline: rules.allowDecline ?? true,
-    timeout_ms: rules.timeoutMs ?? 0,
-    max_declines: rules.maxDeclines ?? 3,
+    acceptance: {
+      implicit_accept_timeout_ms: rules.acceptance?.implicitAcceptTimeoutMs ?? 0,
+    },
+    commitment: serializeCommitment(rules.commitment),
   };
   return {
-    policy_id: policyId,
+    policyId,
     mode: 'macp.mode.handoff.v1',
     description,
     rules: Buffer.from(JSON.stringify(rulesJson)),
-    schema_version: 1,
+    schemaVersion: 1,
   };
 }

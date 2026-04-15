@@ -34,5 +34,5 @@ sync-fixtures-local: sync-fixtures
 ## Link local proto package for development (test proto changes before publishing)
 dev-link-protos:
 	cd ../multiagentcoordinationprotocol/packages/proto-npm && npm link
-	npm link @macp/proto
-	@echo "Linked local @macp/proto. Run 'npm unlink @macp/proto' when done."
+	npm link @multiagentcoordinationprotocol/proto
+	@echo "Linked local @multiagentcoordinationprotocol/proto. Run 'npm unlink @multiagentcoordinationprotocol/proto' when done."

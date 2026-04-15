@@ -1,8 +1,9 @@
 import { authSender, type AuthConfig } from './auth';
-import type { MacpClient } from './client';
+import type { MacpClient, MacpStream } from './client';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_QUORUM } from './constants';
 import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
 import { QuorumProjection } from './projections/quorum';
+import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
   AbstainPayload,
   Ack,
@@ -32,6 +33,7 @@ export class QuorumSession {
 
   constructor(client: MacpClient, options: QuorumSessionOptions = {}) {
     this.client = client;
+    if (options.sessionId) validateSessionId(options.sessionId);
     this.sessionId = options.sessionId ?? newSessionId();
     this.modeVersion = options.modeVersion ?? DEFAULT_MODE_VERSION;
     this.configurationVersion = options.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION;
@@ -57,6 +59,13 @@ export class QuorumSession {
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
+    validateSessionStart({
+      intent: input.intent,
+      participants: input.participants,
+      ttlMs: input.ttlMs,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+    });
     const payload = buildSessionStartPayload({
       intent: input.intent,
       participants: input.participants,
@@ -82,6 +91,9 @@ export class QuorumSession {
   }
 
   async requestApproval(input: ApprovalRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('requestId', input.requestId);
+    validateRequiredField('action', input.action);
+    validateRequiredField('summary', input.summary);
     const envelope = buildEnvelope({
       mode: MODE_QUORUM,
       messageType: 'ApprovalRequest',
@@ -97,6 +109,7 @@ export class QuorumSession {
   }
 
   async approve(input: ApprovePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('requestId', input.requestId);
     const envelope = buildEnvelope({
       mode: MODE_QUORUM,
       messageType: 'Approve',
@@ -112,6 +125,7 @@ export class QuorumSession {
   }
 
   async reject(input: QuorumRejectPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('requestId', input.requestId);
     const envelope = buildEnvelope({
       mode: MODE_QUORUM,
       messageType: 'Reject',
@@ -127,6 +141,7 @@ export class QuorumSession {
   }
 
   async abstain(input: AbstainPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    validateRequiredField('requestId', input.requestId);
     const envelope = buildEnvelope({
       mode: MODE_QUORUM,
       messageType: 'Abstain',
@@ -146,6 +161,7 @@ export class QuorumSession {
     authorityScope: string;
     reason: string;
     commitmentId?: string;
+    outcomePositive?: boolean;
     sender?: string;
     auth?: AuthConfig;
   }): Promise<Ack> {
@@ -154,6 +170,7 @@ export class QuorumSession {
       authorityScope: input.authorityScope,
       reason: input.reason,
       commitmentId: input.commitmentId,
+      outcomePositive: input.outcomePositive,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,
@@ -174,5 +191,16 @@ export class QuorumSession {
 
   metadata(auth?: AuthConfig): Promise<{ metadata: SessionMetadata }> {
     return this.client.getSession(this.sessionId, { auth: auth ?? this.auth });
+  }
+
+  async cancel(reason = '', auth?: AuthConfig): Promise<Ack> {
+    return this.client.cancelSession(this.sessionId, reason, {
+      auth: auth ?? this.auth,
+      raiseOnNack: true,
+    });
+  }
+
+  openStream(auth?: AuthConfig): MacpStream {
+    return this.client.openStream({ auth: auth ?? this.auth });
   }
 }
