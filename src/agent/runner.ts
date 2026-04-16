@@ -17,6 +17,8 @@ export interface BootstrapPayload {
   auth_token?: string;
   agent_id?: string;
   secure?: boolean;
+  /** Mirror of {@link MacpClientOptions.allowInsecure}; required when `secure` is false. */
+  allow_insecure?: boolean;
   participants?: string[];
 }
 
@@ -45,12 +47,13 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
   if (!runtimeAddress) throw new Error('Bootstrap payload missing runtime_address / runtime_url');
 
   const auth = payload.auth_token
-    ? Auth.bearer(payload.auth_token, payload.participant_id)
+    ? Auth.bearer(payload.auth_token, { expectedSender: payload.participant_id })
     : Auth.devAgent(payload.agent_id ?? payload.participant_id);
 
   const client = new MacpClient({
     address: runtimeAddress,
     secure: payload.secure,
+    allowInsecure: payload.allow_insecure,
     auth,
   });
 

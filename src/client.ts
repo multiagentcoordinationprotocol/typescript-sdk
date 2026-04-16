@@ -1,7 +1,15 @@
+/* eslint-disable @typescript-eslint/no-explicit-any --
+ * The gRPC service client returned by `protoLoader.loadSync()` is typed as
+ * `any` by `@grpc/proto-loader`; method signatures (Send, StreamSession,
+ * WatchModeRegistry, …) are runtime-generated. Narrowing these with hand-rolled
+ * interfaces would drift as the proto evolves. This file isolates that `any`
+ * boundary — no other file in `src/` should need the rule disabled. See
+ * CLAUDE.md (`warnings for \`any\` in gRPC layer are expected`).
+ */
 import * as path from 'node:path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
-import { authSender, type AuthConfig, metadataFromAuth } from './auth';
+import { assertSenderMatchesIdentity, authSender, type AuthConfig, metadataFromAuth } from './auth';
 import { buildEnvelope } from './envelope';
 import { MacpAckError, MacpSdkError, MacpTransportError } from './errors';
 import { ProtoRegistry } from './proto-registry';
@@ -19,7 +27,18 @@ import type {
 
 interface MacpClientOptions {
   address: string;
+  /**
+   * Use TLS credentials. Defaults to `true` per RFC-MACP-0006 §3. Pass
+   * `secure: false` together with {@link MacpClientOptions.allowInsecure}
+   * `true` for local development against an insecure runtime.
+   */
   secure?: boolean;
+  /**
+   * Opt out of the secure-by-default guard. Must be set to `true` whenever
+   * `secure` is `false`; otherwise the constructor throws. Intentionally
+   * verbose so agents never ship to production with TLS off by accident.
+   */
+  allowInsecure?: boolean;
   auth?: AuthConfig;
   rootCertificates?: Buffer;
   defaultDeadlineMs?: number;
@@ -116,10 +135,16 @@ export class MacpClient {
 
   constructor(options: MacpClientOptions) {
     this.auth = options.auth;
-    this.secure = options.secure ?? false;
+    this.secure = options.secure ?? true;
+    if (!this.secure && options.allowInsecure !== true) {
+      throw new MacpSdkError(
+        'MacpClient requires TLS. Pass secure: true (default) or, for local development only, ' +
+          'both secure: false and allowInsecure: true. See RFC-MACP-0006 §3.',
+      );
+    }
     this.defaultDeadlineMs = options.defaultDeadlineMs;
     this.clientName = options.clientName ?? 'macp-sdk-typescript';
-    this.clientVersion = options.clientVersion ?? '0.1.0';
+    this.clientVersion = options.clientVersion ?? '0.2.0';
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { protoDir: defaultProtoDir } = require('@multiagentcoordinationprotocol/proto');
     const protoDir = options.protoDir ?? defaultProtoDir;
@@ -356,7 +381,7 @@ export class MacpClient {
     return metadata ? (this.client as any).WatchPolicies({}, metadata) : (this.client as any).WatchPolicies({});
   }
 
-  /** @internal Backwards-compatible alias */
+  /** @deprecated Use {@link watchPolicies}. Scheduled for removal in 0.4.0. */
   _watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     return this.watchPolicies(auth);
   }
@@ -383,15 +408,21 @@ export class MacpClient {
     return metadata ? (this.client as any).WatchSignals({}, metadata) : (this.client as any).WatchSignals({});
   }
 
-  /** @internal Backwards-compatible aliases */
+  /**
+   * @deprecated Use {@link watchModeRegistry}, {@link watchRoots},
+   * {@link watchSignals}. Scheduled for removal in 0.4.0 — the underscored
+   * aliases were kept while `src/watchers.ts` migrated.
+   */
   _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     return this.watchModeRegistry(auth);
   }
 
+  /** @deprecated Use {@link watchRoots}. Scheduled for removal in 0.4.0. */
   _watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     return this.watchRoots(auth);
   }
 
+  /** @deprecated Use {@link watchSignals}. Scheduled for removal in 0.4.0. */
   _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<any> {
     return this.watchSignals(auth);
   }
@@ -407,6 +438,7 @@ export class MacpClient {
   }): Promise<Ack> {
     validateSignalType(options.signalType, options.data);
     const auth = this.requireAuth(options.auth);
+    assertSenderMatchesIdentity(auth, options.sender);
     const payload = this.protoRegistry.encodeKnownPayload('', 'Signal', {
       signalType: options.signalType,
       data: options.data ?? Buffer.alloc(0),
@@ -436,6 +468,7 @@ export class MacpClient {
     deadlineMs?: number;
   }): Promise<Ack> {
     const auth = this.requireAuth(options.auth);
+    assertSenderMatchesIdentity(auth, options.sender);
     const payload = this.protoRegistry.encodeKnownPayload('', 'Progress', {
       progressToken: options.progressToken,
       progress: options.progress,

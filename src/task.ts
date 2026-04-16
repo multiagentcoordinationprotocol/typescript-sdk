@@ -1,7 +1,13 @@
-import { authSender, type AuthConfig } from './auth';
+import { assertSenderMatchesIdentity, authSender, type AuthConfig } from './auth';
 import type { MacpClient, MacpStream } from './client';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_TASK } from './constants';
-import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
+import {
+  buildCommitmentPayload,
+  buildEnvelope,
+  buildSessionStartPayload,
+  newSessionId,
+  toProtoPayload,
+} from './envelope';
 import { TaskProjection } from './projections/task';
 import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
@@ -43,8 +49,10 @@ export class TaskSession {
     this.auth = options.auth;
   }
 
-  private senderFor(sender?: string, auth?: AuthConfig): string {
-    return sender ?? authSender(auth ?? this.auth ?? this.client.auth) ?? '';
+  private senderFor(sender: string | undefined, auth?: AuthConfig): string {
+    const effectiveAuth = auth ?? this.auth ?? this.client.auth;
+    assertSenderMatchesIdentity(effectiveAuth, sender);
+    return sender ?? authSender(effectiveAuth) ?? '';
   }
 
   private async sendAndTrack(envelope: Envelope, auth?: AuthConfig): Promise<Ack> {
@@ -83,11 +91,7 @@ export class TaskSession {
       messageType: 'SessionStart',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_TASK,
-        'SessionStart',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'SessionStart', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, this.auth);
   }
@@ -101,11 +105,7 @@ export class TaskSession {
       messageType: 'TaskRequest',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_TASK,
-        'TaskRequest',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskRequest', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -117,11 +117,7 @@ export class TaskSession {
       messageType: 'TaskAccept',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_TASK,
-        'TaskAccept',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskAccept', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -133,11 +129,7 @@ export class TaskSession {
       messageType: 'TaskReject',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_TASK,
-        'TaskReject',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskReject', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -149,11 +141,7 @@ export class TaskSession {
       messageType: 'TaskUpdate',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_TASK,
-        'TaskUpdate',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskUpdate', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -165,11 +153,7 @@ export class TaskSession {
       messageType: 'TaskComplete',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_TASK,
-        'TaskComplete',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskComplete', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -181,11 +165,7 @@ export class TaskSession {
       messageType: 'TaskFail',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_TASK,
-        'TaskFail',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'TaskFail', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -214,11 +194,7 @@ export class TaskSession {
       messageType: 'Commitment',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_TASK,
-        'Commitment',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_TASK, 'Commitment', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }

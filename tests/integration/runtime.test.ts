@@ -6,6 +6,9 @@
  *     -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
  *     -e MACP_ALLOW_DEV_SENDER_HEADER=1 -e MACP_MEMORY_ONLY=1 macp-runtime
  *
+ * For the Bearer-token sections, also set `MACP_AUTH_TOKENS_JSON` on the
+ * runtime so alice/bob have real identities — see tests/integration/README.md.
+ *
  * Run:
  *   npm run test:integration
  */
@@ -14,21 +17,38 @@ import {
   Auth,
   MacpClient,
   DecisionSession,
+  MacpIdentityMismatchError,
   ProposalSession,
   TaskSession,
   HandoffSession,
   QuorumSession,
   buildDecisionPolicy,
+  newSessionId,
 } from '../../src/index';
 
 const RUNTIME_ADDRESS = process.env.MACP_RUNTIME_ADDRESS ?? 'localhost:50051';
 
-let client: MacpClient;
 const agentAlice = Auth.devAgent('alice');
 const agentBob = Auth.devAgent('bob');
 
+/**
+ * Build a new MacpClient for local tests. Use for isolated describe blocks that
+ * want their own connection; the shared `client` singleton below is fine for
+ * the happy-path suites but do not mutate it.
+ */
+function makeClient(auth = agentAlice): MacpClient {
+  return new MacpClient({
+    address: RUNTIME_ADDRESS,
+    secure: false,
+    allowInsecure: true,
+    auth,
+  });
+}
+
+let client: MacpClient;
+
 beforeAll(() => {
-  client = new MacpClient({ address: RUNTIME_ADDRESS, auth: agentAlice });
+  client = makeClient();
 });
 
 afterAll(() => {
@@ -119,10 +139,12 @@ describe('Decision mode — happy path', () => {
     expect(ack.ok).toBe(true);
   });
 
-  it('retrieves session metadata', async () => {
+  it('retrieves session metadata + projection reflects commitment', async () => {
     const { metadata } = await session.metadata();
     expect(metadata.sessionId).toBe(session.sessionId);
     expect(metadata.mode).toBe('macp.mode.decision.v1');
+    expect(session.projection.isCommitted).toBe(true);
+    expect(session.projection.voteTotals()).toEqual({ p1: 1 });
   });
 });
 
@@ -175,6 +197,11 @@ describe('Proposal mode — happy path', () => {
       sender: 'alice',
     });
     expect(ack.ok).toBe(true);
+    expect(session.projection.isCommitted).toBe(true);
+    // ProposalProjection tracks accepts in a dedicated list; status stays 'open'
+    // unless a Withdraw / terminal Reject arrives.
+    const acceptsForPp1 = session.projection.accepts.filter((a) => a.proposalId === 'pp1');
+    expect(acceptsForPp1.map((a) => a.sender).sort()).toEqual(['alice', 'bob']);
   });
 });
 
@@ -211,6 +238,12 @@ describe('Proposal mode — reject path', () => {
       sender: 'alice',
     });
     expect(withdrawAck.ok).toBe(true);
+
+    // Projection must reflect the terminal state — not just the Ack trail.
+    expect(session.projection.rejections.some((r) => r.proposalId === 'rp1')).toBe(true);
+    expect(session.projection.proposals.get('rp1')?.status).toBe('withdrawn');
+    const { metadata } = await session.metadata();
+    expect(metadata.sessionId).toBe(session.sessionId);
   });
 });
 
@@ -277,6 +310,8 @@ describe('Task mode — happy path', () => {
       sender: 'alice',
     });
     expect(ack.ok).toBe(true);
+    expect(session.projection.isCommitted).toBe(true);
+    expect(session.projection.tasks.get('t1')?.status).toBe('completed');
   });
 });
 
@@ -307,6 +342,7 @@ describe('Task mode — reject path', () => {
       auth: agentBob,
     });
     expect(ack.ok).toBe(true);
+    expect(session.projection.tasks.get('tr1')?.status).toBe('rejected');
   });
 });
 
@@ -339,6 +375,9 @@ describe('Task mode — fail path', () => {
       auth: agentBob,
     });
     expect(ack.ok).toBe(true);
+    expect(session.projection.tasks.get('tf1')?.status).toBe('failed');
+    expect(session.projection.failures.some((f) => f.taskId === 'tf1')).toBe(true);
+    expect(session.projection.phase).toBe('Failed');
   });
 });
 
@@ -392,6 +431,8 @@ describe('Handoff mode — happy path', () => {
       sender: 'alice',
     });
     expect(ack.ok).toBe(true);
+    expect(session.projection.isCommitted).toBe(true);
+    expect(session.projection.isAccepted('h1')).toBe(true);
   });
 });
 
@@ -421,6 +462,8 @@ describe('Handoff mode — decline path', () => {
       auth: agentBob,
     });
     expect(ack.ok).toBe(true);
+    expect(session.projection.isDeclined('hd1')).toBe(true);
+    expect(session.projection.isAccepted('hd1')).toBe(false);
   });
 });
 
@@ -467,6 +510,9 @@ describe('Quorum mode — happy path', () => {
       sender: 'alice',
     });
     expect(ack.ok).toBe(true);
+    expect(session.projection.isCommitted).toBe(true);
+    expect(session.projection.hasQuorum('q1')).toBe(true);
+    expect(session.projection.approvalCount('q1')).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -497,6 +543,8 @@ describe('Quorum mode — reject and abstain', () => {
       auth: agentBob,
     });
     expect(ack.ok).toBe(true);
+    expect(session.projection.hasQuorum('qr1')).toBe(false);
+    expect(session.projection.votedSenders('qr1')).toContain('bob');
   });
 
   it('abstains from an approval request', async () => {
@@ -523,6 +571,8 @@ describe('Quorum mode — reject and abstain', () => {
       auth: agentBob,
     });
     expect(ack.ok).toBe(true);
+    expect(session.projection.hasQuorum('qa1')).toBe(false);
+    expect(session.projection.votedSenders('qa1')).toContain('bob');
   });
 });
 
@@ -672,5 +722,122 @@ describe('Extension mode registration', () => {
 
     const unreg = await client.unregisterExtMode('ext.test_mode.v1', { auth: agentAlice });
     expect(unreg.ok).toBe(true);
+  });
+});
+
+// ── Direct-agent auth (RFC-MACP-0004 §4) ─────────────────────────────
+//
+// Mirrors PY-5 from the direct-agent-auth plan. Runs only when the runtime
+// has Bearer credentials provisioned for `alice` + `bob` via
+// MACP_AUTH_TOKENS_JSON. See tests/integration/README.md.
+
+const ALICE_TOKEN = process.env.MACP_TEST_BEARER_ALICE;
+const BOB_TOKEN = process.env.MACP_TEST_BEARER_BOB;
+
+describe.skipIf(!ALICE_TOKEN || !BOB_TOKEN)('Direct-agent auth — pre-allocated sessionId + Bearer', () => {
+  it('initiator opens a pre-allocated session and drives the full Decision loop', async () => {
+    const sessionId = newSessionId();
+
+    const aliceAuth = Auth.bearer(ALICE_TOKEN!, { expectedSender: 'alice' });
+    const bobAuth = Auth.bearer(BOB_TOKEN!, { expectedSender: 'bob' });
+
+    const aliceClient = new MacpClient({
+      address: RUNTIME_ADDRESS,
+      secure: false,
+      allowInsecure: true,
+      auth: aliceAuth,
+    });
+    const bobClient = new MacpClient({
+      address: RUNTIME_ADDRESS,
+      secure: false,
+      allowInsecure: true,
+      auth: bobAuth,
+    });
+
+    try {
+      await aliceClient.initialize(5000);
+      await bobClient.initialize(5000);
+
+      const aliceSession = new DecisionSession(aliceClient, { sessionId });
+      const bobSession = new DecisionSession(bobClient, { sessionId });
+      expect(aliceSession.sessionId).toBe(sessionId);
+      expect(bobSession.sessionId).toBe(sessionId);
+
+      // Initiator drives SessionStart → stream → Proposal.
+      const startAck = await aliceSession.start({
+        intent: 'Direct-agent auth smoke',
+        participants: ['alice', 'bob'],
+        ttlMs: 30_000,
+      });
+      expect(startAck.ok).toBe(true);
+
+      const stream = aliceSession.openStream();
+      const received: unknown[] = [];
+      const consumer = (async () => {
+        for await (const envelope of stream.responses()) {
+          received.push(envelope);
+          if (received.length >= 1) break;
+        }
+      })();
+
+      const proposeAck = await aliceSession.propose({
+        proposalId: 'da-1',
+        option: 'use-direct-auth',
+        rationale: 'RFC-MACP-0004 §4 compliance',
+      });
+      expect(proposeAck.ok).toBe(true);
+
+      // Non-initiator evaluates + votes with its own Bearer identity.
+      const evalAck = await bobSession.evaluate({
+        proposalId: 'da-1',
+        recommendation: 'APPROVE',
+        confidence: 0.9,
+        analysis: 'Aligned with invariants',
+      });
+      expect(evalAck.ok).toBe(true);
+
+      const voteAck = await bobSession.vote({
+        proposalId: 'da-1',
+        vote: 'approve',
+        reason: 'Agreed',
+      });
+      expect(voteAck.ok).toBe(true);
+
+      const timeout = new Promise<void>((_, reject) => setTimeout(() => reject(new Error('stream timeout')), 5000));
+      await Promise.race([consumer, timeout]);
+      stream.close();
+      expect(received.length).toBeGreaterThanOrEqual(1);
+
+      const { metadata } = await aliceSession.metadata();
+      expect(metadata.sessionId).toBe(sessionId);
+      expect(metadata.mode).toBe('macp.mode.decision.v1');
+
+      await aliceSession.cancel('test cleanup');
+    } finally {
+      aliceClient.close();
+      bobClient.close();
+    }
+  });
+
+  it('rejects explicit sender that conflicts with expectedSender', () => {
+    const aliceAuth = Auth.bearer(ALICE_TOKEN!, { expectedSender: 'alice' });
+    const aliceClient = new MacpClient({
+      address: RUNTIME_ADDRESS,
+      secure: false,
+      allowInsecure: true,
+      auth: aliceAuth,
+    });
+    try {
+      const session = new DecisionSession(aliceClient);
+      expect(() =>
+        session.propose({
+          proposalId: 'rogue',
+          option: 'x',
+          sender: 'mallory',
+        }),
+      ).toThrow(MacpIdentityMismatchError);
+    } finally {
+      aliceClient.close();
+    }
   });
 });

@@ -177,7 +177,6 @@ export class TaskProjection {
   }
 
   latestProgress(): number | undefined {
-    if (this.updates.length === 0) return undefined;
-    return this.updates[this.updates.length - 1].progress;
+    return this.updates[this.updates.length - 1]?.progress;
   }
 }

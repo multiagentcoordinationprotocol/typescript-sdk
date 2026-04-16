@@ -91,3 +91,25 @@ export class MacpRetryError extends MacpTransportError {
     this.name = 'MacpRetryError';
   }
 }
+
+/**
+ * Raised when an explicit `sender` supplied to a mode helper conflicts with
+ * the authenticated identity declared on {@link AuthConfig.expectedSender}.
+ *
+ * Surfaced by the SDK rather than the runtime so agents fail fast before
+ * forging an envelope the runtime would reject (RFC-MACP-0004 §4).
+ */
+export class MacpIdentityMismatchError extends MacpSdkError {
+  readonly expectedSender: string;
+  readonly actualSender: string;
+
+  constructor(expectedSender: string, actualSender: string) {
+    super(
+      `envelope sender "${actualSender}" does not match the authenticated identity "${expectedSender}"; ` +
+        'remove the explicit sender or reconfigure Auth.bearer(token, { expectedSender })',
+    );
+    this.name = 'MacpIdentityMismatchError';
+    this.expectedSender = expectedSender;
+    this.actualSender = actualSender;
+  }
+}

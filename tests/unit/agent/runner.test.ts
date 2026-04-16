@@ -57,7 +57,7 @@ describe('fromBootstrap', () => {
       expect(participant.mode).toBe(MODE_TASK);
     });
 
-    it('uses bearer auth when auth_token is provided', () => {
+    it('uses bearer auth when auth_token is provided and binds expectedSender to participant_id', () => {
       const filePath = writeTempBootstrap(
         validPayload({
           auth_token: 'secret-token',
@@ -68,6 +68,9 @@ describe('fromBootstrap', () => {
       expect(participant.auth).toBeDefined();
       expect(participant.auth!.bearerToken).toBe('secret-token');
       expect(participant.auth!.senderHint).toBe('agent-1');
+      // Direct-agent-auth invariant: the runner must wire the authenticated
+      // identity into Auth.bearer so the SDK enforces it before any Send.
+      expect(participant.auth!.expectedSender).toBe('agent-1');
     });
 
     it('uses dev agent auth when no auth_token', () => {
@@ -156,6 +159,16 @@ describe('fromBootstrap', () => {
       fs.writeFileSync(filePath, 'not json');
 
       expect(() => fromBootstrap(filePath)).toThrow();
+    });
+
+    it('throws when secure: false is set without allow_insecure: true', () => {
+      const filePath = writeTempBootstrap(validPayload({ secure: false }));
+      expect(() => fromBootstrap(filePath)).toThrow(/allowInsecure/);
+    });
+
+    it('accepts secure: false when allow_insecure: true is also set', () => {
+      const filePath = writeTempBootstrap(validPayload({ secure: false, allow_insecure: true }));
+      expect(() => fromBootstrap(filePath)).not.toThrow();
     });
   });
 });

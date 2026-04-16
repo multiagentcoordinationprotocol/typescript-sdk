@@ -1,7 +1,13 @@
-import { authSender, type AuthConfig } from './auth';
+import { assertSenderMatchesIdentity, authSender, type AuthConfig } from './auth';
 import type { MacpClient, MacpStream } from './client';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_QUORUM } from './constants';
-import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
+import {
+  buildCommitmentPayload,
+  buildEnvelope,
+  buildSessionStartPayload,
+  newSessionId,
+  toProtoPayload,
+} from './envelope';
 import { QuorumProjection } from './projections/quorum';
 import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
@@ -41,8 +47,10 @@ export class QuorumSession {
     this.auth = options.auth;
   }
 
-  private senderFor(sender?: string, auth?: AuthConfig): string {
-    return sender ?? authSender(auth ?? this.auth ?? this.client.auth) ?? '';
+  private senderFor(sender: string | undefined, auth?: AuthConfig): string {
+    const effectiveAuth = auth ?? this.auth ?? this.client.auth;
+    assertSenderMatchesIdentity(effectiveAuth, sender);
+    return sender ?? authSender(effectiveAuth) ?? '';
   }
 
   private async sendAndTrack(envelope: Envelope, auth?: AuthConfig): Promise<Ack> {
@@ -81,11 +89,7 @@ export class QuorumSession {
       messageType: 'SessionStart',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_QUORUM,
-        'SessionStart',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_QUORUM, 'SessionStart', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, this.auth);
   }
@@ -99,11 +103,7 @@ export class QuorumSession {
       messageType: 'ApprovalRequest',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_QUORUM,
-        'ApprovalRequest',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_QUORUM, 'ApprovalRequest', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -115,11 +115,7 @@ export class QuorumSession {
       messageType: 'Approve',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_QUORUM,
-        'Approve',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_QUORUM, 'Approve', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -131,11 +127,7 @@ export class QuorumSession {
       messageType: 'Reject',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_QUORUM,
-        'Reject',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_QUORUM, 'Reject', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -147,11 +139,7 @@ export class QuorumSession {
       messageType: 'Abstain',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_QUORUM,
-        'Abstain',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_QUORUM, 'Abstain', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -180,11 +168,7 @@ export class QuorumSession {
       messageType: 'Commitment',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_QUORUM,
-        'Commitment',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_QUORUM, 'Commitment', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }

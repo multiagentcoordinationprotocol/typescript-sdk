@@ -28,5 +28,28 @@ jobs:
       - run: npm run check
       - run: npm run lint
       - run: npm run format:check
-      - run: npm test
+      # Runs the unit + conformance suites AND enforces the coverage
+      # thresholds set in vitest.config.ts. If coverage drops below the floor,
+      # this step fails the build.
+      - run: npm run test:coverage
       - run: npm run build
+
+  audit:
+    # Non-blocking dependency audit. Fails only on "high" / "critical" CVEs and
+    # is allowed to go red so we notice without hard-blocking PRs.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@multiagentcoordinationprotocol'
+      - run: rm -f package-lock.json && npm install
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npm audit --audit-level=high

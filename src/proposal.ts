@@ -1,4 +1,4 @@
-import { authSender, type AuthConfig } from './auth';
+import { assertSenderMatchesIdentity, authSender, type AuthConfig } from './auth';
 import type { MacpClient, MacpStream } from './client';
 import {
   DEFAULT_CONFIGURATION_VERSION,
@@ -6,7 +6,13 @@ import {
   DEFAULT_POLICY_VERSION,
   MODE_PROPOSAL,
 } from './constants';
-import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
+import {
+  buildCommitmentPayload,
+  buildEnvelope,
+  buildSessionStartPayload,
+  newSessionId,
+  toProtoPayload,
+} from './envelope';
 import { ProposalProjection } from './projections/proposal';
 import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
@@ -47,8 +53,10 @@ export class ProposalSession {
     this.auth = options.auth;
   }
 
-  private senderFor(sender?: string, auth?: AuthConfig): string {
-    return sender ?? authSender(auth ?? this.auth ?? this.client.auth) ?? '';
+  private senderFor(sender: string | undefined, auth?: AuthConfig): string {
+    const effectiveAuth = auth ?? this.auth ?? this.client.auth;
+    assertSenderMatchesIdentity(effectiveAuth, sender);
+    return sender ?? authSender(effectiveAuth) ?? '';
   }
 
   private async sendAndTrack(envelope: Envelope, auth?: AuthConfig): Promise<Ack> {
@@ -87,11 +95,7 @@ export class ProposalSession {
       messageType: 'SessionStart',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_PROPOSAL,
-        'SessionStart',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_PROPOSAL, 'SessionStart', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, this.auth);
   }
@@ -104,11 +108,7 @@ export class ProposalSession {
       messageType: 'Proposal',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_PROPOSAL,
-        'Proposal',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_PROPOSAL, 'Proposal', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -121,11 +121,7 @@ export class ProposalSession {
       messageType: 'CounterProposal',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_PROPOSAL,
-        'CounterProposal',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_PROPOSAL, 'CounterProposal', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -137,11 +133,7 @@ export class ProposalSession {
       messageType: 'Accept',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_PROPOSAL,
-        'Accept',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_PROPOSAL, 'Accept', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -153,11 +145,7 @@ export class ProposalSession {
       messageType: 'Reject',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_PROPOSAL,
-        'Reject',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_PROPOSAL, 'Reject', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -169,11 +157,7 @@ export class ProposalSession {
       messageType: 'Withdraw',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_PROPOSAL,
-        'Withdraw',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_PROPOSAL, 'Withdraw', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -202,11 +186,7 @@ export class ProposalSession {
       messageType: 'Commitment',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_PROPOSAL,
-        'Commitment',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_PROPOSAL, 'Commitment', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }

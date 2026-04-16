@@ -118,8 +118,9 @@ export class HandoffProjection {
   activeOffer(): HandoffRecord | undefined {
     const all = [...this.handoffs.values()];
     for (let i = all.length - 1; i >= 0; i--) {
-      if (all[i].status === 'offered' || all[i].status === 'context_sent') {
-        return all[i];
+      const record = all[i];
+      if (record && (record.status === 'offered' || record.status === 'context_sent')) {
+        return record;
       }
     }
     return undefined;

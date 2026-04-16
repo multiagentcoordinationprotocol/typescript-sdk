@@ -28,6 +28,7 @@ import { Auth, MacpClient, DecisionSession } from 'macp-sdk-typescript';
 const client = new MacpClient({
   address: '127.0.0.1:50051',
   secure: false,
+  allowInsecure: true, // local dev only; production must use TLS
   auth: Auth.devAgent('coordinator'),
 });
 
@@ -147,7 +148,7 @@ import { HandoffSession } from 'macp-sdk-typescript';
 const session = new HandoffSession(client);
 await session.start({ intent: '...', participants: ['bob'], ttlMs: 60_000 });
 await session.offer({ handoffId: 'h1', targetParticipant: 'bob', scope: 'frontend' });
-await session.sendContext({ handoffId: 'h1', contentType: 'application/json', context: buf });
+await session.addContext({ handoffId: 'h1', contentType: 'application/json', context: buf });
 await session.acceptHandoff({ handoffId: 'h1', acceptedBy: 'bob' });
 await session.commit({ action: 'handoff.accepted', authorityScope: 'team', reason: '...' });
 
@@ -182,8 +183,13 @@ session.projection.votedSenders('r1');           // string[]
 // Development (uses x-macp-agent-id header)
 const auth = Auth.devAgent('my-agent');
 
-// Production (uses Authorization: Bearer header)
-const auth = Auth.bearer('token-value', 'sender-hint');
+// Production (Bearer token with authenticated identity — RFC-MACP-0004 §4).
+// The SDK refuses to emit an envelope whose `sender` differs from
+// `expectedSender`, so bugs surface locally instead of as runtime NACKs.
+const auth = Auth.bearer('token-value', { expectedSender: 'alice' });
+
+// Legacy form — bearer with only a sender hint, no identity guard:
+const loose = Auth.bearer('token-value', 'alice');
 ```
 
 Pass `auth` to the client constructor for default auth, or per-method for multi-agent scenarios:
@@ -196,6 +202,22 @@ await session.vote({
   auth: Auth.devAgent('alice'),
 });
 ```
+
+## TLS
+
+TLS is on by default (RFC-MACP-0006 §3). To connect to an insecure runtime
+during local development, you must opt out explicitly:
+
+```typescript
+const client = new MacpClient({
+  address: '127.0.0.1:50051',
+  secure: false,
+  allowInsecure: true, // must be paired with secure: false
+  auth,
+});
+```
+
+Omit `allowInsecure` in production — the constructor throws when `secure: false` is passed without it.
 
 ## Streaming
 
