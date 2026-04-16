@@ -67,9 +67,7 @@ export class ModeRegistryWatcher {
   }
 
   async *changes(signal?: AbortSignal): AsyncGenerator<RegistryChanged, void, void> {
-    const stream = (
-      this.client as unknown as { _watchModeRegistry(auth?: AuthConfig): grpc.ClientReadableStream<RegistryChanged> }
-    )._watchModeRegistry(this.auth);
+    const stream = this.client.watchModeRegistry(this.auth) as grpc.ClientReadableStream<RegistryChanged>;
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
     }
@@ -101,9 +99,7 @@ export class RootsWatcher {
   }
 
   async *changes(signal?: AbortSignal): AsyncGenerator<RootsChanged, void, void> {
-    const stream = (
-      this.client as unknown as { _watchRoots(auth?: AuthConfig): grpc.ClientReadableStream<RootsChanged> }
-    )._watchRoots(this.auth);
+    const stream = this.client.watchRoots(this.auth) as grpc.ClientReadableStream<RootsChanged>;
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
     }
@@ -135,9 +131,7 @@ export class SignalWatcher {
   }
 
   async *signals(signal?: AbortSignal): AsyncGenerator<Envelope, void, void> {
-    const stream = (
-      this.client as unknown as { _watchSignals(auth?: AuthConfig): grpc.ClientReadableStream<{ envelope?: Envelope }> }
-    )._watchSignals(this.auth);
+    const stream = this.client.watchSignals(this.auth) as grpc.ClientReadableStream<{ envelope?: Envelope }>;
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
     }
@@ -177,9 +171,7 @@ export class PolicyWatcher {
   }
 
   async *changes(signal?: AbortSignal): AsyncGenerator<PolicyChange, void, void> {
-    const stream = (
-      this.client as unknown as { _watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<PolicyChange> }
-    )._watchPolicies(this.auth);
+    const stream = this.client.watchPolicies(this.auth) as grpc.ClientReadableStream<PolicyChange>;
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
     }

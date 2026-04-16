@@ -1,7 +1,13 @@
-import { authSender, type AuthConfig } from './auth';
+import { assertSenderMatchesIdentity, authSender, type AuthConfig } from './auth';
 import type { MacpClient, MacpStream } from './client';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MODE_HANDOFF } from './constants';
-import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
+import {
+  buildCommitmentPayload,
+  buildEnvelope,
+  buildSessionStartPayload,
+  newSessionId,
+  toProtoPayload,
+} from './envelope';
 import { HandoffProjection } from './projections/handoff';
 import { validateRequiredField, validateSessionId, validateSessionStart } from './validation';
 import type {
@@ -13,6 +19,16 @@ import type {
   HandoffOfferPayload,
   SessionMetadata,
 } from './types';
+
+let sendContextWarned = false;
+function warnSendContextOnce(): void {
+  if (sendContextWarned) return;
+  sendContextWarned = true;
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[macp-sdk-typescript] HandoffSession.sendContext() is deprecated and will be removed in 0.4.0. Use addContext() instead.',
+  );
+}
 
 interface HandoffSessionOptions {
   sessionId?: string;
@@ -41,8 +57,10 @@ export class HandoffSession {
     this.auth = options.auth;
   }
 
-  private senderFor(sender?: string, auth?: AuthConfig): string {
-    return sender ?? authSender(auth ?? this.auth ?? this.client.auth) ?? '';
+  private senderFor(sender: string | undefined, auth?: AuthConfig): string {
+    const effectiveAuth = auth ?? this.auth ?? this.client.auth;
+    assertSenderMatchesIdentity(effectiveAuth, sender);
+    return sender ?? authSender(effectiveAuth) ?? '';
   }
 
   private async sendAndTrack(envelope: Envelope, auth?: AuthConfig): Promise<Ack> {
@@ -81,11 +99,7 @@ export class HandoffSession {
       messageType: 'SessionStart',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_HANDOFF,
-        'SessionStart',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'SessionStart', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, this.auth);
   }
@@ -99,11 +113,7 @@ export class HandoffSession {
       messageType: 'HandoffOffer',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_HANDOFF,
-        'HandoffOffer',
-        offerInput as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffOffer', toProtoPayload(offerInput)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -115,17 +125,17 @@ export class HandoffSession {
       messageType: 'HandoffContext',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_HANDOFF,
-        'HandoffContext',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffContext', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
 
-  /** @deprecated Use {@link addContext} instead. */
+  /**
+   * @deprecated Use {@link addContext} instead. Scheduled for removal in 0.4.0.
+   * First call logs a one-shot warning to guide migrations without spamming long-lived processes.
+   */
   async sendContext(input: HandoffContextPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+    warnSendContextOnce();
     return this.addContext(input);
   }
 
@@ -136,11 +146,7 @@ export class HandoffSession {
       messageType: 'HandoffAccept',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_HANDOFF,
-        'HandoffAccept',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffAccept', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -152,11 +158,7 @@ export class HandoffSession {
       messageType: 'HandoffDecline',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_HANDOFF,
-        'HandoffDecline',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffDecline', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -185,11 +187,7 @@ export class HandoffSession {
       messageType: 'Commitment',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_HANDOFF,
-        'Commitment',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'Commitment', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }

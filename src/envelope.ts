@@ -81,6 +81,21 @@ export function buildRoot(uri: string, name = ''): Root {
   return { uri, name };
 }
 
+/**
+ * Type-erasure helper for protobuf payload encoders.
+ *
+ * `ProtoRegistry.encodeKnownPayload(mode, messageType, value)` accepts a
+ * `Record<string, unknown>` because it does reflective field lookup. Our
+ * mode-specific payload interfaces (e.g. `DecisionProposalPayload`) carry
+ * stricter field types, so every call site otherwise ends up with
+ * `input as unknown as Record<string, unknown>`. Centralising the coercion
+ * keeps the `as unknown as` explanation in one place — the helper never
+ * narrows, it only erases.
+ */
+export function toProtoPayload<T extends object>(input: T): Record<string, unknown> {
+  return input as unknown as Record<string, unknown>;
+}
+
 export function buildEnvelope(input: {
   mode: string;
   messageType: string;

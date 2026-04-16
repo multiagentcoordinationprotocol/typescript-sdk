@@ -1,4 +1,4 @@
-import { authSender, type AuthConfig } from './auth';
+import { assertSenderMatchesIdentity, authSender, type AuthConfig } from './auth';
 import type { MacpClient, MacpStream } from './client';
 import {
   DEFAULT_CONFIGURATION_VERSION,
@@ -6,7 +6,13 @@ import {
   DEFAULT_POLICY_VERSION,
   MODE_DECISION,
 } from './constants';
-import { buildCommitmentPayload, buildEnvelope, buildSessionStartPayload, newSessionId } from './envelope';
+import {
+  buildCommitmentPayload,
+  buildEnvelope,
+  buildSessionStartPayload,
+  newSessionId,
+  toProtoPayload,
+} from './envelope';
 import { DecisionProjection } from './projections';
 import {
   validateConfidence,
@@ -54,8 +60,10 @@ export class DecisionSession {
     this.auth = options.auth;
   }
 
-  private senderFor(sender?: string, auth?: AuthConfig): string {
-    return sender ?? authSender(auth ?? this.auth ?? this.client.auth) ?? '';
+  private senderFor(sender: string | undefined, auth?: AuthConfig): string {
+    const effectiveAuth = auth ?? this.auth ?? this.client.auth;
+    assertSenderMatchesIdentity(effectiveAuth, sender);
+    return sender ?? authSender(effectiveAuth) ?? '';
   }
 
   private async sendAndTrack(envelope: Envelope, auth?: AuthConfig): Promise<Ack> {
@@ -94,11 +102,7 @@ export class DecisionSession {
       messageType: 'SessionStart',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_DECISION,
-        'SessionStart',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'SessionStart', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, this.auth);
   }
@@ -111,11 +115,7 @@ export class DecisionSession {
       messageType: 'Proposal',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_DECISION,
-        'Proposal',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'Proposal', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -129,11 +129,7 @@ export class DecisionSession {
       messageType: 'Evaluation',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_DECISION,
-        'Evaluation',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'Evaluation', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -146,11 +142,7 @@ export class DecisionSession {
       messageType: 'Objection',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_DECISION,
-        'Objection',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'Objection', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -163,11 +155,7 @@ export class DecisionSession {
       messageType: 'Vote',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_DECISION,
-        'Vote',
-        input as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'Vote', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }
@@ -196,11 +184,7 @@ export class DecisionSession {
       messageType: 'Commitment',
       sessionId: this.sessionId,
       sender: this.senderFor(input.sender, input.auth),
-      payload: this.client.protoRegistry.encodeKnownPayload(
-        MODE_DECISION,
-        'Commitment',
-        payload as unknown as Record<string, unknown>,
-      ),
+      payload: this.client.protoRegistry.encodeKnownPayload(MODE_DECISION, 'Commitment', toProtoPayload(payload)),
     });
     return this.sendAndTrack(envelope, input.auth);
   }

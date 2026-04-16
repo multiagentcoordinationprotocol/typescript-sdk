@@ -6,6 +6,7 @@ import {
   MacpSessionError,
   MacpTimeoutError,
   MacpRetryError,
+  MacpIdentityMismatchError,
 } from '../../src/errors';
 
 describe('Error classes', () => {
@@ -63,6 +64,17 @@ describe('Error classes', () => {
     expect(err).toBeInstanceOf(MacpSdkError);
     expect(err.name).toBe('MacpRetryError');
     expect(err.message).toBe('retries exhausted after 3 attempts');
+  });
+
+  it('MacpIdentityMismatchError extends MacpSdkError and exposes both senders', () => {
+    const err = new MacpIdentityMismatchError('alice', 'mallory');
+    expect(err).toBeInstanceOf(MacpSdkError);
+    expect(err).not.toBeInstanceOf(MacpTransportError);
+    expect(err.name).toBe('MacpIdentityMismatchError');
+    expect(err.expectedSender).toBe('alice');
+    expect(err.actualSender).toBe('mallory');
+    expect(err.message).toContain('alice');
+    expect(err.message).toContain('mallory');
   });
 
   describe('MacpAckError.reasons', () => {

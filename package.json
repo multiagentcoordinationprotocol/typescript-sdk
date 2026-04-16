@@ -1,14 +1,22 @@
 {
   "name": "macp-sdk-typescript",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TypeScript SDK for the MACP Rust runtime",
   "license": "Apache-2.0",
   "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "sideEffects": false,
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -20,7 +28,15 @@
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "test:coverage": "vitest run --coverage --config vitest.config.ts",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "example:decision": "tsx examples/decision-smoke.ts",
+    "example:proposal": "tsx examples/proposal-smoke.ts",
+    "example:task": "tsx examples/task-smoke.ts",
+    "example:handoff": "tsx examples/handoff-smoke.ts",
+    "example:quorum": "tsx examples/quorum-smoke.ts",
+    "example:watch": "tsx examples/watch-smoke.ts",
+    "example:bearer": "tsx examples/bearer-smoke.ts",
+    "prepublishOnly": "npm run check && npm run lint && npm run format:check && npm test && npm run build"
   },
   "engines": {
     "node": ">=18"
@@ -37,19 +53,20 @@
     "url": "https://github.com/multiagentcoordinationprotocol/typescript-sdk.git"
   },
   "dependencies": {
-    "@multiagentcoordinationprotocol/proto": "^0.1.0",
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",
+    "@multiagentcoordinationprotocol/proto": "^0.1.0",
     "protobufjs": "^8.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.8.3",
-    "@vitest/coverage-v8": "^3.0.0",
     "vitest": "^3.0.0"
   }
 }
