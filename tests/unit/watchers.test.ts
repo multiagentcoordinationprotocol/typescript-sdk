@@ -1,7 +1,13 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MacpClient } from '../../src/client';
-import { ModeRegistryWatcher, PolicyWatcher, RootsWatcher, SignalWatcher } from '../../src/watchers';
+import {
+  ModeRegistryWatcher,
+  PolicyWatcher,
+  RootsWatcher,
+  SessionLifecycleWatcher,
+  SignalWatcher,
+} from '../../src/watchers';
 
 /**
  * Fake gRPC readable stream: an EventEmitter with a .cancel() method.
@@ -198,5 +204,90 @@ describe('PolicyWatcher', () => {
 
     stream.emitEnd();
     await pending;
+  });
+});
+
+describe('SessionLifecycleWatcher', () => {
+  it('unwraps events from the wire frame', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream));
+
+    const iter = watcher.events();
+    const pending = iter.next();
+    stream.emitData({
+      event: {
+        eventType: 'EVENT_TYPE_CREATED',
+        session: { sessionId: 's1', mode: 'macp.mode.decision.v1' },
+        observedAtUnixMs: '100',
+      },
+    });
+    const first = await pending;
+    expect(first.done).toBe(false);
+    expect(first.value).toMatchObject({
+      eventType: 'EVENT_TYPE_CREATED',
+      session: { sessionId: 's1' },
+    });
+  });
+
+  it('skips frames that carry no event', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream));
+
+    const iter = watcher.events();
+    const pending = iter.next();
+    stream.emitData({}); // no event — watcher should not yield
+    stream.emitData({
+      event: {
+        eventType: 'EVENT_TYPE_RESOLVED',
+        session: { sessionId: 's2' },
+        observedAtUnixMs: '200',
+      },
+    });
+    const first = await pending;
+    expect(first.value).toMatchObject({ eventType: 'EVENT_TYPE_RESOLVED', session: { sessionId: 's2' } });
+  });
+
+  it('nextEvent rejects when the stream ends empty', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream));
+
+    const pending = watcher.nextEvent();
+    stream.emitEnd();
+    await expect(pending).rejects.toThrow('stream ended before receiving a session lifecycle event');
+  });
+
+  it('wires the abort signal', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream));
+    const controller = new AbortController();
+
+    const iter = watcher.events(controller.signal);
+    const pending = iter.next();
+    controller.abort();
+    expect(stream.cancel).toHaveBeenCalledTimes(1);
+
+    stream.emitEnd();
+    await pending;
+  });
+
+  it('watch() drives the handler for each event', async () => {
+    const stream = new FakeReadableStream();
+    const watcher = new SessionLifecycleWatcher(makeClientWith('watchSessions', stream));
+    const seen: string[] = [];
+
+    const promise = watcher.watch((event) => {
+      seen.push(event.eventType);
+    });
+
+    stream.emitData({
+      event: { eventType: 'EVENT_TYPE_CREATED', session: { sessionId: 's1' }, observedAtUnixMs: '1' },
+    });
+    stream.emitData({
+      event: { eventType: 'EVENT_TYPE_EXPIRED', session: { sessionId: 's1' }, observedAtUnixMs: '2' },
+    });
+    stream.emitEnd();
+    await promise;
+
+    expect(seen).toEqual(['EVENT_TYPE_CREATED', 'EVENT_TYPE_EXPIRED']);
   });
 });

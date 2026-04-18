@@ -221,7 +221,7 @@ export class MacpClient {
           websiteUrl: '',
         },
         capabilities: {
-          sessions: { stream: true },
+          sessions: { stream: true, listSessions: true, watchSessions: true },
           cancellation: { cancelSession: true },
           progress: { progress: true },
           manifest: { getManifest: true },
@@ -374,6 +374,22 @@ export class MacpClient {
       options?.deadlineMs,
     );
     return res.descriptors || [];
+  }
+
+  async listSessions(options?: { auth?: AuthConfig; deadlineMs?: number }): Promise<SessionMetadata[]> {
+    const auth = this.requireAuth(options?.auth);
+    const res = await this.unary<Record<string, never>, { sessions?: SessionMetadata[] }>(
+      'ListSessions',
+      {},
+      auth,
+      options?.deadlineMs,
+    );
+    return res.sessions || [];
+  }
+
+  watchSessions(auth?: AuthConfig): grpc.ClientReadableStream<any> {
+    const metadata = this.metadata(auth);
+    return metadata ? (this.client as any).WatchSessions({}, metadata) : (this.client as any).WatchSessions({});
   }
 
   watchPolicies(auth?: AuthConfig): grpc.ClientReadableStream<any> {

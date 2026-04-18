@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { Auth } from '../auth';
 import { MacpClient } from '../client';
 import { DEFAULT_POLICY_VERSION } from '../constants';
-import { Participant, type ParticipantConfig } from './participant';
+import { Participant, type ParticipantConfig, type InitiatorConfig } from './participant';
 
 export interface BootstrapPayload {
   session_id: string;
@@ -17,9 +17,26 @@ export interface BootstrapPayload {
   auth_token?: string;
   agent_id?: string;
   secure?: boolean;
-  /** Mirror of {@link MacpClientOptions.allowInsecure}; required when `secure` is false. */
   allow_insecure?: boolean;
   participants?: string[];
+  initiator?: {
+    session_start: {
+      intent: string;
+      participants: string[];
+      ttl_ms: number;
+      mode_version?: string;
+      configuration_version?: string;
+      policy_version?: string;
+      context?: Record<string, unknown>;
+      roots?: Array<{ uri: string; name?: string }>;
+    };
+    kickoff?: {
+      message_type: string;
+      payload_type?: string;
+      payload: Record<string, unknown>;
+    };
+  };
+  metadata?: Record<string, unknown>;
 }
 
 export function fromBootstrap(bootstrapPath?: string): Participant {
@@ -57,6 +74,25 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
     auth,
   });
 
+  let initiator: InitiatorConfig | undefined;
+  if (payload.initiator) {
+    const ss = payload.initiator.session_start;
+    initiator = {
+      sessionStart: {
+        intent: ss.intent,
+        participants: ss.participants,
+        ttlMs: ss.ttl_ms,
+        roots: ss.roots,
+      },
+      kickoff: payload.initiator.kickoff
+        ? {
+            messageType: payload.initiator.kickoff.message_type,
+            payload: payload.initiator.kickoff.payload,
+          }
+        : undefined,
+    };
+  }
+
   const config: ParticipantConfig = {
     participantId: payload.participant_id,
     sessionId: payload.session_id,
@@ -67,6 +103,7 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
     modeVersion: payload.mode_version,
     configurationVersion: payload.configuration_version,
     policyVersion: payload.policy_version ?? DEFAULT_POLICY_VERSION,
+    initiator,
   };
 
   return new Participant(config);

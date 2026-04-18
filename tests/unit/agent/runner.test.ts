@@ -148,6 +148,52 @@ describe('fromBootstrap', () => {
     });
   });
 
+  describe('initiator config', () => {
+    it('creates a Participant when initiator is present in bootstrap', () => {
+      const filePath = writeTempBootstrap(
+        validPayload({
+          initiator: {
+            session_start: {
+              intent: 'decide deployment',
+              participants: ['agent-1', 'agent-2'],
+              ttl_ms: 30000,
+              roots: [{ uri: 'file:///workspace' }],
+            },
+            kickoff: {
+              message_type: 'Proposal',
+              payload: { proposalId: 'p1', option: 'canary' },
+            },
+          },
+        }),
+      );
+      const participant = fromBootstrap(filePath);
+      expect(participant.participantId).toBe('agent-1');
+      expect(participant.mode).toBe(MODE_DECISION);
+    });
+
+    it('creates a Participant when initiator has no kickoff', () => {
+      const filePath = writeTempBootstrap(
+        validPayload({
+          initiator: {
+            session_start: {
+              intent: 'decide',
+              participants: ['agent-1'],
+              ttl_ms: 10000,
+            },
+          },
+        }),
+      );
+      const participant = fromBootstrap(filePath);
+      expect(participant.participantId).toBe('agent-1');
+    });
+
+    it('creates a Participant without initiator (default)', () => {
+      const filePath = writeTempBootstrap(validPayload());
+      const participant = fromBootstrap(filePath);
+      expect(participant.participantId).toBe('agent-1');
+    });
+  });
+
   describe('error handling', () => {
     it('throws when bootstrap file does not exist', () => {
       expect(() => fromBootstrap('/nonexistent/path/bootstrap.json')).toThrow('not found');

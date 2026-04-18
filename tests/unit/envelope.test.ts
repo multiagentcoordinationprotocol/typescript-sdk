@@ -3,7 +3,6 @@ import {
   buildEnvelope,
   buildSessionStartPayload,
   buildCommitmentPayload,
-  encodeContext,
   newSessionId,
   newMessageId,
   newCommitmentId,
@@ -149,24 +148,28 @@ describe('envelope builders', () => {
     });
   });
 
-  describe('encodeContext', () => {
-    it('returns empty buffer for undefined', () => {
-      expect(encodeContext(undefined).length).toBe(0);
+  describe('buildSessionStartPayload contextId and extensions', () => {
+    it('defaults contextId to empty string and extensions to empty object', () => {
+      const payload = buildSessionStartPayload({
+        intent: 'test',
+        participants: ['a'],
+        ttlMs: 5000,
+      });
+      expect(payload.contextId).toBe('');
+      expect(payload.extensions).toEqual({});
     });
 
-    it('passes through Buffer input', () => {
-      const buf = Buffer.from('hello');
-      expect(encodeContext(buf)).toBe(buf);
-    });
-
-    it('encodes string to UTF-8', () => {
-      const result = encodeContext('hello');
-      expect(result.toString('utf8')).toBe('hello');
-    });
-
-    it('encodes object to JSON', () => {
-      const result = encodeContext({ key: 'value' });
-      expect(JSON.parse(result.toString('utf8'))).toEqual({ key: 'value' });
+    it('passes through explicit contextId and extensions', () => {
+      const ext = { 'x-trace': Buffer.from('abc') };
+      const payload = buildSessionStartPayload({
+        intent: 'test',
+        participants: ['a'],
+        ttlMs: 5000,
+        contextId: 'ctx-123',
+        extensions: ext,
+      });
+      expect(payload.contextId).toBe('ctx-123');
+      expect(payload.extensions).toBe(ext);
     });
   });
 

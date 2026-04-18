@@ -1,7 +1,7 @@
 import type * as grpc from '@grpc/grpc-js';
 import type { AuthConfig } from './auth';
 import type { MacpClient } from './client';
-import type { Envelope, PolicyDescriptor, RegistryChanged, RootsChanged } from './types';
+import type { Envelope, PolicyDescriptor, RegistryChanged, RootsChanged, SessionLifecycleEvent } from './types';
 
 function serverStreamToAsyncGenerator<T>(stream: grpc.ClientReadableStream<T>): AsyncGenerator<T, void, void> {
   const queue: Array<{ value: T } | { error: Error } | { done: true }> = [];
@@ -189,6 +189,41 @@ export class PolicyWatcher {
     const result = await gen.next();
     await gen.return(undefined as never);
     if (result.done) throw new Error('stream ended before receiving a policy change');
+    return result.value;
+  }
+}
+
+export class SessionLifecycleWatcher {
+  private readonly client: MacpClient;
+  private readonly auth?: AuthConfig;
+
+  constructor(client: MacpClient, options?: { auth?: AuthConfig }) {
+    this.client = client;
+    this.auth = options?.auth;
+  }
+
+  async *events(signal?: AbortSignal): AsyncGenerator<SessionLifecycleEvent, void, void> {
+    const stream = this.client.watchSessions(this.auth) as grpc.ClientReadableStream<{ event?: SessionLifecycleEvent }>;
+    if (signal) {
+      signal.addEventListener('abort', () => stream.cancel(), { once: true });
+    }
+    const gen = serverStreamToAsyncGenerator(stream);
+    for await (const response of gen) {
+      if (response.event) yield response.event;
+    }
+  }
+
+  async watch(handler: (event: SessionLifecycleEvent) => void | Promise<void>): Promise<void> {
+    for await (const event of this.events()) {
+      await handler(event);
+    }
+  }
+
+  async nextEvent(): Promise<SessionLifecycleEvent> {
+    const gen = this.events();
+    const result = await gen.next();
+    await gen.return(undefined as never);
+    if (result.done) throw new Error('stream ended before receiving a session lifecycle event');
     return result.value;
   }
 }

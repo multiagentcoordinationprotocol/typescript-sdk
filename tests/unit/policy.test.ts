@@ -7,8 +7,8 @@ import {
   buildHandoffPolicy,
 } from '../../src/policy';
 
-function parseRules(descriptor: { rules: Buffer | Uint8Array }): Record<string, unknown> {
-  return JSON.parse(Buffer.from(descriptor.rules).toString('utf8'));
+function parseRules(descriptor: { rules: string }): Record<string, unknown> {
+  return JSON.parse(descriptor.rules);
 }
 
 describe('policy builders', () => {
@@ -273,9 +273,9 @@ describe('policy builders', () => {
   });
 
   describe('PolicyDescriptor shape', () => {
-    it('rules field is a Buffer', () => {
+    it('rules field is a string', () => {
       const descriptor = buildDecisionPolicy('p1', 'desc', {});
-      expect(Buffer.isBuffer(descriptor.rules)).toBe(true);
+      expect(typeof descriptor.rules).toBe('string');
     });
 
     it('rules can be parsed as JSON', () => {
@@ -284,9 +284,9 @@ describe('policy builders', () => {
       expect((parsed.voting as Record<string, unknown>).algorithm).toBe('unanimous');
     });
 
-    it('registered_at is undefined by default', () => {
+    it('registeredAtUnixMs is undefined by default', () => {
       const descriptor = buildDecisionPolicy('p1', 'desc', {});
-      expect(descriptor.registered_at).toBeUndefined();
+      expect(descriptor.registeredAtUnixMs).toBeUndefined();
     });
   });
 });

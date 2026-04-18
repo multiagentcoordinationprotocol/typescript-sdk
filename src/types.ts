@@ -50,6 +50,8 @@ export interface SessionMetadata {
   participants?: string[];
   participantActivity?: ParticipantActivity[];
   initiator?: string;
+  contextId?: string;
+  extensionKeys?: string[];
 }
 
 export interface ModeDescriptor {
@@ -103,7 +105,8 @@ export interface SessionStartPayload {
   configurationVersion: string;
   policyVersion?: string;
   ttlMs: number;
-  context?: Buffer;
+  contextId?: string;
+  extensions?: Record<string, Buffer>;
   roots?: Root[];
 }
 
@@ -287,7 +290,7 @@ export interface PolicyDescriptor {
   policyId: string;
   mode: string;
   description: string;
-  rules: Buffer | Uint8Array;
+  rules: string;
   schemaVersion: number;
   registeredAtUnixMs?: number;
 }
@@ -298,5 +301,17 @@ export interface RegistryChanged {
 }
 
 export interface RootsChanged {
+  observedAtUnixMs: string;
+}
+
+export type SessionLifecycleEventType =
+  | 'EVENT_TYPE_UNSPECIFIED'
+  | 'EVENT_TYPE_CREATED'
+  | 'EVENT_TYPE_RESOLVED'
+  | 'EVENT_TYPE_EXPIRED';
+
+export interface SessionLifecycleEvent {
+  eventType: SessionLifecycleEventType;
+  session: SessionMetadata;
   observedAtUnixMs: string;
 }

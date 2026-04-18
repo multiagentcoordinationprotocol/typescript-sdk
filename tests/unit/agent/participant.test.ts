@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Participant, type ParticipantConfig } from '../../../src/agent/participant';
+import { Participant, type ParticipantConfig, type InitiatorConfig } from '../../../src/agent/participant';
 import type { TransportAdapter } from '../../../src/agent/transports';
 import type { IncomingMessage } from '../../../src/agent/types';
 import { MODE_DECISION, MODE_PROPOSAL, MODE_TASK, MODE_HANDOFF, MODE_QUORUM } from '../../../src/constants';
@@ -117,6 +117,32 @@ describe('Participant', () => {
         transport: makeMockTransport([]),
       });
       expect(participant.mode).toBe(MODE_QUORUM);
+    });
+
+    it('creates with initiator config', () => {
+      const client = makeMockClient();
+      const initiator: InitiatorConfig = {
+        sessionStart: {
+          intent: 'decide deployment',
+          participants: ['agent-1', 'agent-2'],
+          ttlMs: 30000,
+        },
+        kickoff: {
+          messageType: 'Proposal',
+          payload: { proposalId: 'p1', option: 'canary' },
+        },
+      };
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+        initiator,
+      });
+
+      expect(participant.participantId).toBe('agent-1');
+      expect(participant.mode).toBe(MODE_DECISION);
     });
 
     it('creates with unknown mode', () => {

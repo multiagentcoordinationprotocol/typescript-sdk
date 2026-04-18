@@ -65,7 +65,8 @@ export class TaskSession {
     intent: string;
     participants: string[];
     ttlMs: number;
-    context?: Buffer | string | Record<string, unknown>;
+    contextId?: string;
+    extensions?: Record<string, Buffer>;
     roots?: { uri: string; name?: string }[];
     sender?: string;
   }): Promise<Ack> {
@@ -80,7 +81,8 @@ export class TaskSession {
       intent: input.intent,
       participants: input.participants,
       ttlMs: input.ttlMs,
-      context: input.context,
+      contextId: input.contextId,
+      extensions: input.extensions,
       roots: input.roots,
       modeVersion: this.modeVersion,
       configurationVersion: this.configurationVersion,
