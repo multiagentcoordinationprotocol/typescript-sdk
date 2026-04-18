@@ -20,6 +20,20 @@ import type {
   TerminalResult,
 } from './types';
 
+export interface InitiatorConfig {
+  sessionStart: {
+    intent: string;
+    participants: string[];
+    ttlMs: number;
+    context?: Record<string, unknown>;
+    roots?: Array<{ uri: string; name?: string }>;
+  };
+  kickoff?: {
+    messageType: string;
+    payload: Record<string, unknown>;
+  };
+}
+
 export interface ParticipantConfig {
   participantId: string;
   sessionId: string;
@@ -31,6 +45,7 @@ export interface ParticipantConfig {
   configurationVersion?: string;
   policyVersion?: string;
   transport?: TransportAdapter;
+  initiator?: InitiatorConfig;
 }
 
 type ModeSession = DecisionSession | ProposalSession | TaskSession | HandoffSession | QuorumSession;
@@ -47,6 +62,7 @@ export class Participant {
   private readonly dispatcher: Dispatcher;
   private readonly session: ModeSession | null;
   private readonly transport: TransportAdapter;
+  private readonly initiatorConfig?: InitiatorConfig;
   private running = false;
   private lastPhase: string;
 
@@ -72,6 +88,7 @@ export class Participant {
     this.lastPhase = projection.phase;
     this.actions = this.buildActions();
     this.transport = config.transport ?? new GrpcTransportAdapter(config.client, config.sessionId, config.auth);
+    this.initiatorConfig = config.initiator;
   }
 
   private createModeSession(
@@ -210,6 +227,10 @@ export class Participant {
     if (this.running) return;
     this.running = true;
 
+    if (this.initiatorConfig && this.session) {
+      await this.emitInitiatorEnvelopes();
+    }
+
     const sessionInfo: SessionInfo = {
       sessionId: this.sessionId,
       mode: this.mode,
@@ -279,5 +300,31 @@ export class Participant {
   async stop(): Promise<void> {
     this.running = false;
     await this.transport.stop();
+  }
+
+  private async emitInitiatorEnvelopes(): Promise<void> {
+    if (!this.initiatorConfig || !this.session) return;
+    const ss = this.initiatorConfig.sessionStart;
+
+    if ('start' in this.session && typeof this.session.start === 'function') {
+      await this.session.start({
+        intent: ss.intent,
+        participants: ss.participants,
+        ttlMs: ss.ttlMs,
+        roots: ss.roots,
+      });
+    }
+
+    const kickoff = this.initiatorConfig.kickoff;
+    if (!kickoff) return;
+
+    if (kickoff.messageType === 'Proposal' && this.session instanceof DecisionSession) {
+      const payload = kickoff.payload;
+      await this.session.propose({
+        proposalId: String(payload.proposalId ?? payload.proposal_id ?? `${this.sessionId}-kickoff`),
+        option: String(payload.option ?? 'decide'),
+        rationale: payload.rationale !== undefined ? String(payload.rationale) : undefined,
+      });
+    }
   }
 }

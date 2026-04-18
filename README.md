@@ -74,6 +74,21 @@ Every session class follows the same pattern:
 4. Call `commit()` to finalize
 5. Read `session.projection` for local state
 
+### Session Start Options
+
+All `start()` methods accept `contextId` and `extensions` for session-level metadata:
+
+```typescript
+await session.start({
+  intent: 'pick a deployment strategy',
+  participants: ['alice', 'bob'],
+  ttlMs: 60_000,
+  contextId: 'ctx-abc',                           // optional opaque context reference
+  extensions: { 'x-trace': Buffer.from('tid') },  // optional typed extension buffers
+  roots: [{ uri: 'file:///workspace', name: 'repo' }],
+});
+```
+
 ## Coordination Modes
 
 ### Decision Mode
@@ -175,6 +190,76 @@ session.projection.hasQuorum('r1');              // true/false
 session.projection.approvalCount('r1');          // number
 session.projection.remainingVotesNeeded('r1');   // number
 session.projection.votedSenders('r1');           // string[]
+```
+
+## Agent Framework
+
+The `agent` module provides event-driven abstractions for building MACP participants.
+
+### Participant
+
+`Participant` wraps a session, projection, and transport into a single event-driven handler:
+
+```typescript
+import { agent } from 'macp-sdk-typescript';
+
+const participant = new agent.Participant({
+  participantId: 'evaluator',
+  sessionId: 'sid-123',
+  mode: 'macp.mode.decision.v1',
+  client,
+  transport: new agent.GrpcTransportAdapter(client, 'sid-123', auth),
+});
+
+participant
+  .on('Proposal', async (msg, ctx) => {
+    await ctx.actions.evaluate({
+      proposalId: msg.payload.proposalId,
+      recommendation: 'APPROVE',
+      confidence: 0.95,
+    });
+  })
+  .onTerminal(async (result) => {
+    console.log('session ended:', result.reason);
+  });
+
+await participant.run();
+```
+
+### Bootstrap Runner
+
+`fromBootstrap()` creates a fully-wired `Participant` from a JSON bootstrap file (typically provided by the runtime orchestrator):
+
+```typescript
+import { agent } from 'macp-sdk-typescript';
+
+// Reads from path argument or MACP_BOOTSTRAP_FILE env var
+const participant = agent.fromBootstrap('./bootstrap.json');
+participant.on('Proposal', handler);
+await participant.run();
+```
+
+Bootstrap files can include an `initiator` section for participants that start the session:
+
+```json
+{
+  "session_id": "sid-123",
+  "participant_id": "coordinator",
+  "mode": "macp.mode.decision.v1",
+  "runtime_address": "localhost:50051",
+  "initiator": {
+    "session_start": {
+      "intent": "pick deployment strategy",
+      "participants": ["coordinator", "evaluator"],
+      "ttl_ms": 60000,
+      "roots": [{ "uri": "file:///workspace" }]
+    },
+    "kickoff": {
+      "message_type": "Proposal",
+      "payload": { "proposalId": "p1", "option": "canary" }
+    }
+  }
+}
 ```
 
 ## Authentication

@@ -18,13 +18,6 @@ export function nowUnixMs(): number {
   return Date.now();
 }
 
-export function encodeContext(context?: Buffer | string | Record<string, unknown>): Buffer {
-  if (!context) return Buffer.alloc(0);
-  if (Buffer.isBuffer(context)) return context;
-  if (typeof context === 'string') return Buffer.from(context, 'utf8');
-  return Buffer.from(JSON.stringify(context), 'utf8');
-}
-
 export function buildSessionStartPayload(input: {
   intent: string;
   participants: string[];
@@ -32,7 +25,8 @@ export function buildSessionStartPayload(input: {
   modeVersion?: string;
   configurationVersion?: string;
   policyVersion?: string;
-  context?: Buffer | string | Record<string, unknown>;
+  contextId?: string;
+  extensions?: Record<string, Buffer>;
   roots?: Root[];
 }): SessionStartPayload {
   return {
@@ -42,7 +36,8 @@ export function buildSessionStartPayload(input: {
     configurationVersion: input.configurationVersion ?? DEFAULT_CONFIGURATION_VERSION,
     policyVersion: input.policyVersion ?? DEFAULT_POLICY_VERSION,
     ttlMs: input.ttlMs,
-    context: encodeContext(input.context),
+    contextId: input.contextId ?? '',
+    extensions: input.extensions ?? {},
     roots: input.roots ?? [],
   };
 }

@@ -620,7 +620,8 @@ describe('Streaming', () => {
       configurationVersion: 'config.default',
       policyVersion: 'policy.default',
       ttlMs: 30_000,
-      context: Buffer.alloc(0),
+      contextId: '',
+      extensions: {},
       roots: [],
     });
     const envelope = {

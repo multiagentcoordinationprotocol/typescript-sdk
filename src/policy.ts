@@ -113,7 +113,7 @@ export function buildDecisionPolicy(
     policyId,
     mode: 'macp.mode.decision.v1',
     description,
-    rules: Buffer.from(JSON.stringify(rulesJson)),
+    rules: JSON.stringify(rulesJson),
     schemaVersion: 1,
   };
 }
@@ -138,7 +138,7 @@ export function buildQuorumPolicy(
     policyId,
     mode: 'macp.mode.quorum.v1',
     description,
-    rules: Buffer.from(JSON.stringify(rulesJson)),
+    rules: JSON.stringify(rulesJson),
     schemaVersion: 1,
   };
 }
@@ -164,7 +164,7 @@ export function buildProposalPolicy(
     policyId,
     mode: 'macp.mode.proposal.v1',
     description,
-    rules: Buffer.from(JSON.stringify(rulesJson)),
+    rules: JSON.stringify(rulesJson),
     schemaVersion: 1,
   };
 }
@@ -183,7 +183,7 @@ export function buildTaskPolicy(policyId: string, description: string, rules: Ta
     policyId,
     mode: 'macp.mode.task.v1',
     description,
-    rules: Buffer.from(JSON.stringify(rulesJson)),
+    rules: JSON.stringify(rulesJson),
     schemaVersion: 1,
   };
 }
@@ -203,7 +203,7 @@ export function buildHandoffPolicy(
     policyId,
     mode: 'macp.mode.handoff.v1',
     description,
-    rules: Buffer.from(JSON.stringify(rulesJson)),
+    rules: JSON.stringify(rulesJson),
     schemaVersion: 1,
   };
 }
