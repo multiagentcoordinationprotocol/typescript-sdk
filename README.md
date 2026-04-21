@@ -319,6 +319,17 @@ for await (const envelope of stream.responses()) {
 stream.close();
 ```
 
+To attach to a session that is already in flight and receive accepted history before live broadcast (RFC-MACP-0006 §3.2 passive subscribe):
+
+```typescript
+const stream = client.openStream({ auth });
+await stream.sendSubscribe(sessionId);            // full replay then live
+// or, after a reconnect:
+await stream.sendSubscribe(sessionId, lastSeq);    // resume from cursor
+```
+
+The agent framework's `GrpcTransportAdapter` calls this for you on start, so non-initiator agents see `SessionStart` regardless of join order.
+
 ### Registry & Root Watchers
 
 ```typescript
