@@ -7,11 +7,32 @@ project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `MacpStream.sendSubscribe(sessionId, afterSequence?)` — subscribe-only stream
+  frame (RFC-MACP-0006-A1). The runtime replays accepted envelopes from the
+  cursor before switching to live broadcast, so non-initiator agents observe
+  `SessionStart` and earlier mode envelopes regardless of join order.
+- `GrpcTransportAdapter` now sends a subscribe frame automatically on start so
+  `Participant`-based agents pick up history without bespoke wiring.
+- Unit coverage for `MacpStream.sendSubscribe` (default cursor, custom cursor,
+  closed-stream rejection, write-error propagation, sequential resubscribe) and
+  `GrpcTransportAdapter` (subscribe ordering, empty-stream subscribe, auth
+  pass-through to `openStream`).
+- Integration tests for late-subscriber replay and future-cursor skip
+  (`tests/integration/runtime.test.ts`).
 - Warn-once migration hint when the deprecated `HandoffSession.sendContext()`
   alias is invoked. Scheduled for removal in `0.4.0`; use `addContext()`.
 - `docs/api/sessions.md` now documents the identity-guard contract.
 - `docs/guides/architecture.md` rewritten to reflect the three-layer design
   (transport / session helpers / agent framework).
+
+### Changed
+- Integration tests updated to match the proto field renames that landed in
+  `@multiagentcoordinationprotocol/proto@0.1.x`: `Evaluation.analysis` →
+  `reason`, `Proposal.description` → `summary`, `TaskRequest.assignee` →
+  `requestedAssignee` (Task accept/update/complete/fail/reject now carry an
+  `assignee` field), `TaskUpdate.progress` is required, `HandoffContext.data`
+  → `context` (+ `contentType`), `HandoffAccept.acceptedBy` and
+  `HandoffDecline.declinedBy` are now required.
 
 ### Deprecated
 - `HandoffSession.sendContext()` remains available as an alias but emits a

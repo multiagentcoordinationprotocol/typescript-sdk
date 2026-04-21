@@ -17,20 +17,23 @@ function makeEnvelope(overrides?: Partial<Envelope>): Envelope {
   };
 }
 
+function makeMockStream(envelopes: Envelope[] = []) {
+  return {
+    responses: async function* () {
+      for (const e of envelopes) yield e;
+    },
+    sendSubscribe: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn(),
+  };
+}
+
 describe('GrpcTransportAdapter', () => {
   it('yields messages from the stream filtered by sessionId', async () => {
     const envelope1 = makeEnvelope({ sessionId: 'session-1' });
     const envelope2 = makeEnvelope({ sessionId: 'session-2', messageId: 'msg-2' });
     const envelope3 = makeEnvelope({ sessionId: 'session-1', messageId: 'msg-3', messageType: 'Vote' });
 
-    const mockStream = {
-      responses: async function* () {
-        yield envelope1;
-        yield envelope2;
-        yield envelope3;
-      },
-      close: vi.fn(),
-    };
+    const mockStream = makeMockStream([envelope1, envelope2, envelope3]);
 
     const mockClient = {
       openStream: vi.fn().mockReturnValue(mockStream),
@@ -63,12 +66,7 @@ describe('GrpcTransportAdapter', () => {
     const envelope = makeEnvelope();
     const decoded = { proposalId: 'p1', option: 'deploy' };
 
-    const mockStream = {
-      responses: async function* () {
-        yield envelope;
-      },
-      close: vi.fn(),
-    };
+    const mockStream = makeMockStream([envelope]);
 
     const decodeKnown = vi.fn().mockReturnValue(decoded);
     const mockClient = {
@@ -89,12 +87,7 @@ describe('GrpcTransportAdapter', () => {
 
   it('extracts proposalId from decoded payload', async () => {
     const envelope = makeEnvelope();
-    const mockStream = {
-      responses: async function* () {
-        yield envelope;
-      },
-      close: vi.fn(),
-    };
+    const mockStream = makeMockStream([envelope]);
 
     const mockClient = {
       openStream: vi.fn().mockReturnValue(mockStream),
@@ -114,12 +107,7 @@ describe('GrpcTransportAdapter', () => {
 
   it('preserves raw envelope on incoming message', async () => {
     const envelope = makeEnvelope();
-    const mockStream = {
-      responses: async function* () {
-        yield envelope;
-      },
-      close: vi.fn(),
-    };
+    const mockStream = makeMockStream([envelope]);
 
     const mockClient = {
       openStream: vi.fn().mockReturnValue(mockStream),
@@ -136,12 +124,7 @@ describe('GrpcTransportAdapter', () => {
   });
 
   it('stop closes the stream', async () => {
-    const mockStream = {
-      responses: async function* (): AsyncGenerator<Envelope> {
-        // no-op, empty stream
-      },
-      close: vi.fn(),
-    };
+    const mockStream = makeMockStream();
 
     const mockClient = {
       openStream: vi.fn().mockReturnValue(mockStream),
@@ -155,6 +138,71 @@ describe('GrpcTransportAdapter', () => {
     }
     await adapter.stop();
     expect(mockStream.close).toHaveBeenCalled();
+  });
+
+  // RFC-MACP-0006-A1: the adapter subscribes to the session on stream open so
+  // the runtime replays accepted envelopes (SessionStart, Proposal, …) before
+  // switching to live broadcast. Non-initiators rely on this replay path.
+  it('subscribes to the session with sessionId before reading responses', async () => {
+    const envelope = makeEnvelope({ sessionId: 'session-xyz' });
+    const mockStream = makeMockStream([envelope]);
+    const mockClient = {
+      openStream: vi.fn().mockReturnValue(mockStream),
+      protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+    } as any;
+
+    const adapter = new GrpcTransportAdapter(mockClient, 'session-xyz');
+    for await (const _ of adapter.start()) {
+      break;
+    }
+
+    expect(mockStream.sendSubscribe).toHaveBeenCalledTimes(1);
+    // The adapter calls sendSubscribe(sessionId) — the default afterSequence=0
+    // in MacpStream means "replay everything", which is what a fresh participant
+    // wants. If we ever start passing a cursor, this assertion needs updating.
+    expect(mockStream.sendSubscribe).toHaveBeenCalledWith('session-xyz');
+    // subscribe must be sent before any envelope is yielded
+    const subscribeOrder = mockStream.sendSubscribe.mock.invocationCallOrder[0];
+    const decodeOrder = (mockClient.protoRegistry.decodeKnownPayload as any).mock.invocationCallOrder[0] ?? Infinity;
+    expect(subscribeOrder).toBeLessThan(decodeOrder);
+  });
+
+  it('subscribes even when the stream produces no envelopes', async () => {
+    // Empty replay + no live traffic must still result in exactly one subscribe
+    // frame — the runtime needs it to register the consumer.
+    const mockStream = makeMockStream();
+    const mockClient = {
+      openStream: vi.fn().mockReturnValue(mockStream),
+      protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+    } as any;
+
+    const adapter = new GrpcTransportAdapter(mockClient, 'session-empty');
+    for await (const _ of adapter.start()) {
+      // unreachable
+    }
+
+    expect(mockStream.sendSubscribe).toHaveBeenCalledTimes(1);
+    expect(mockStream.sendSubscribe).toHaveBeenCalledWith('session-empty');
+  });
+
+  it('passes the auth option through to openStream', async () => {
+    // The transport adapter must forward its constructor `auth` so the gRPC
+    // metadata for the StreamSession call carries the right identity.
+    const mockStream = makeMockStream();
+    const openStream = vi.fn().mockReturnValue(mockStream);
+    const mockClient = {
+      openStream,
+      protoRegistry: { decodeKnownPayload: vi.fn().mockReturnValue({}) },
+    } as any;
+
+    const auth = { authToken: 'tok', expectedSender: 'alice' } as any;
+    const adapter = new GrpcTransportAdapter(mockClient, 'session-1', auth);
+    for await (const _ of adapter.start()) {
+      // empty
+    }
+
+    expect(openStream).toHaveBeenCalledTimes(1);
+    expect(openStream).toHaveBeenCalledWith({ auth });
   });
 });
 

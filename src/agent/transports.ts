@@ -36,6 +36,13 @@ export class GrpcTransportAdapter implements TransportAdapter {
 
   async *start(): AsyncIterable<IncomingMessage> {
     this.stream = this.client.openStream({ auth: this.auth });
+
+    // RFC-MACP-0006-A1: Subscribe to the session with history replay.
+    // The runtime replays accepted envelopes then switches to live broadcast.
+    // This ensures non-initiator agents receive the SessionStart + Proposal
+    // regardless of spawn order or connection timing.
+    await this.stream.sendSubscribe(this.sessionId);
+
     for await (const envelope of this.stream.responses()) {
       if (envelope.sessionId !== this.sessionId) continue;
       yield normalizeEnvelope(

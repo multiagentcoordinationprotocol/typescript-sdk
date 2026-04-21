@@ -108,6 +108,21 @@ export class MacpStream {
     });
   }
 
+  /**
+   * RFC-MACP-0006-A1: Send a subscribe-only frame to receive session history
+   * + live broadcast. The runtime replays accepted envelopes from
+   * `afterSequence` onwards, then continues with live broadcast.
+   */
+  sendSubscribe(sessionId: string, afterSequence = 0): Promise<void> {
+    if (this.closed) return Promise.reject(new MacpSdkError('stream is already closed'));
+    return new Promise<void>((resolve, reject) => {
+      this.call.write({ subscribeSessionId: sessionId, afterSequence }, (error?: Error | null) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
   async *responses(): AsyncGenerator<Envelope, void, void> {
     while (true) {
       const item = await this.queue.shift();

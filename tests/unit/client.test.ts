@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../src/auth';
-import { MacpClient } from '../../src/client';
+import { MacpClient, MacpStream } from '../../src/client';
 import { DecisionSession } from '../../src/decision';
 import { HandoffSession } from '../../src/handoff';
 import { ProposalSession } from '../../src/proposal';
@@ -253,5 +253,112 @@ describe('newSessionId public export', () => {
     const a = mod.newSessionId();
     const b = mod.newSessionId();
     expect(a).not.toBe(b);
+  });
+});
+
+// ── MacpStream.sendSubscribe (RFC-MACP-0006-A1) ─────────────────────
+//
+// The subscribe frame is the first write the adapter sends after opening a
+// StreamSession call. The runtime treats it as a subscribe-only frame and
+// replays accepted envelopes from `afterSequence` before switching to live
+// broadcast, so non-initiators see SessionStart regardless of join order.
+
+interface MockDuplex {
+  on: ReturnType<typeof vi.fn>;
+  write: ReturnType<typeof vi.fn>;
+  end: ReturnType<typeof vi.fn>;
+}
+
+type DuplexCtorArg = ConstructorParameters<typeof MacpStream>[0];
+
+function makeMockDuplex(writeImpl?: (frame: unknown, cb?: (err?: Error | null) => void) => boolean): MockDuplex {
+  return {
+    on: vi.fn(),
+    write: vi.fn(
+      writeImpl ??
+        ((_frame, cb) => {
+          if (cb) cb(null);
+          return true;
+        }),
+    ),
+    end: vi.fn(),
+  };
+}
+
+function makeStream(duplex: MockDuplex): MacpStream {
+  return new MacpStream(duplex as unknown as DuplexCtorArg);
+}
+
+describe('MacpStream.sendSubscribe', () => {
+  it('writes a subscribe-only frame with sessionId + afterSequence=0 by default', async () => {
+    const duplex = makeMockDuplex();
+    const stream = makeStream(duplex);
+
+    await stream.sendSubscribe('session-xyz');
+
+    expect(duplex.write).toHaveBeenCalledTimes(1);
+    const [frame, cb] = duplex.write.mock.calls[0];
+    expect(frame).toEqual({ subscribeSessionId: 'session-xyz', afterSequence: 0 });
+    // The write callback is required — without it the Promise would never resolve.
+    expect(typeof cb).toBe('function');
+  });
+
+  it('passes afterSequence through for replay cursor', async () => {
+    const duplex = makeMockDuplex();
+    const stream = makeStream(duplex);
+
+    await stream.sendSubscribe('session-xyz', 42);
+
+    const frame = duplex.write.mock.calls[0][0];
+    expect(frame).toEqual({ subscribeSessionId: 'session-xyz', afterSequence: 42 });
+  });
+
+  it('does not write an envelope field on subscribe frames', async () => {
+    // Regression guard: the runtime distinguishes subscribe-only frames by the
+    // absence of `envelope`. If we ever start packing one, the runtime would
+    // try to validate it and NACK.
+    const duplex = makeMockDuplex();
+    const stream = makeStream(duplex);
+
+    await stream.sendSubscribe('session-xyz');
+
+    const frame = duplex.write.mock.calls[0][0] as Record<string, unknown>;
+    expect(frame).not.toHaveProperty('envelope');
+  });
+
+  it('rejects when called on a closed stream', async () => {
+    const duplex = makeMockDuplex();
+    const stream = makeStream(duplex);
+
+    stream.close();
+
+    await expect(stream.sendSubscribe('session-xyz')).rejects.toBeInstanceOf(MacpSdkError);
+    // close() ends the underlying call but does not write the subscribe frame
+    expect(duplex.write).not.toHaveBeenCalled();
+    expect(duplex.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates write errors from the underlying duplex', async () => {
+    const duplex = makeMockDuplex((_frame, cb) => {
+      if (cb) cb(new Error('backpressure'));
+      return false;
+    });
+    const stream = makeStream(duplex);
+
+    await expect(stream.sendSubscribe('session-xyz')).rejects.toThrow(/backpressure/);
+  });
+
+  it('allows multiple sequential subscribe frames (resume with new cursor)', async () => {
+    // A reconnect path may send a subscribe at seq=0 and later re-issue with a
+    // new cursor. Both writes must reach the underlying duplex.
+    const duplex = makeMockDuplex();
+    const stream = makeStream(duplex);
+
+    await stream.sendSubscribe('session-xyz');
+    await stream.sendSubscribe('session-xyz', 17);
+
+    expect(duplex.write).toHaveBeenCalledTimes(2);
+    expect(duplex.write.mock.calls[0][0]).toEqual({ subscribeSessionId: 'session-xyz', afterSequence: 0 });
+    expect(duplex.write.mock.calls[1][0]).toEqual({ subscribeSessionId: 'session-xyz', afterSequence: 17 });
   });
 });

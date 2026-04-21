@@ -111,7 +111,7 @@ describe('Decision mode — happy path', () => {
       proposalId: 'p1',
       recommendation: 'APPROVE',
       confidence: 0.9,
-      analysis: 'Solid choice',
+      reason: 'Solid choice',
       sender: 'bob',
       auth: agentBob,
     });
@@ -166,7 +166,7 @@ describe('Proposal mode — happy path', () => {
     const propAck = await session.propose({
       proposalId: 'pp1',
       title: 'REST endpoints',
-      description: 'Standard REST API',
+      summary: 'Standard REST API',
       sender: 'alice',
     });
     expect(propAck.ok).toBe(true);
@@ -220,7 +220,7 @@ describe('Proposal mode — reject path', () => {
     await session.propose({
       proposalId: 'rp1',
       title: 'Use MongoDB',
-      description: 'NoSQL approach',
+      summary: 'NoSQL approach',
       sender: 'alice',
     });
 
@@ -266,7 +266,7 @@ describe('Task mode — happy path', () => {
       taskId: 't1',
       title: 'Review PR #42',
       instructions: 'Check for security issues',
-      assignee: 'bob',
+      requestedAssignee: 'bob',
       sender: 'alice',
     });
     expect(reqAck.ok).toBe(true);
@@ -275,6 +275,7 @@ describe('Task mode — happy path', () => {
   it('accepts the task', async () => {
     const ack = await session.acceptTask({
       taskId: 't1',
+      assignee: 'bob',
       sender: 'bob',
       auth: agentBob,
     });
@@ -285,6 +286,7 @@ describe('Task mode — happy path', () => {
     const ack = await session.update({
       taskId: 't1',
       status: 'in_progress',
+      progress: 0.5,
       message: 'Reviewing files',
       sender: 'bob',
       auth: agentBob,
@@ -295,6 +297,7 @@ describe('Task mode — happy path', () => {
   it('completes the task', async () => {
     const ack = await session.complete({
       taskId: 't1',
+      assignee: 'bob',
       output: Buffer.from('No issues found'),
       sender: 'bob',
       auth: agentBob,
@@ -331,12 +334,13 @@ describe('Task mode — reject path', () => {
       taskId: 'tr1',
       title: 'Fix prod bug',
       instructions: 'Investigate crash',
-      assignee: 'bob',
+      requestedAssignee: 'bob',
       sender: 'alice',
     });
 
     const ack = await session.rejectTask({
       taskId: 'tr1',
+      assignee: 'bob',
       reason: 'Not my area',
       sender: 'bob',
       auth: agentBob,
@@ -362,14 +366,15 @@ describe('Task mode — fail path', () => {
       taskId: 'tf1',
       title: 'Deploy v2',
       instructions: 'Deploy to staging',
-      assignee: 'bob',
+      requestedAssignee: 'bob',
       sender: 'alice',
     });
 
-    await session.acceptTask({ taskId: 'tf1', sender: 'bob', auth: agentBob });
+    await session.acceptTask({ taskId: 'tf1', assignee: 'bob', sender: 'bob', auth: agentBob });
 
     const ack = await session.fail({
       taskId: 'tf1',
+      assignee: 'bob',
       reason: 'Staging down',
       sender: 'bob',
       auth: agentBob,
@@ -408,7 +413,8 @@ describe('Handoff mode — happy path', () => {
   it('adds context', async () => {
     const ack = await session.addContext({
       handoffId: 'h1',
-      data: Buffer.from(JSON.stringify({ docs: 'wiki/frontend' })),
+      contentType: 'application/json',
+      context: Buffer.from(JSON.stringify({ docs: 'wiki/frontend' })),
       sender: 'alice',
     });
     expect(ack.ok).toBe(true);
@@ -417,6 +423,7 @@ describe('Handoff mode — happy path', () => {
   it('accepts the handoff', async () => {
     const ack = await session.acceptHandoff({
       handoffId: 'h1',
+      acceptedBy: 'bob',
       sender: 'bob',
       auth: agentBob,
     });
@@ -457,6 +464,7 @@ describe('Handoff mode — decline path', () => {
 
     const ack = await session.decline({
       handoffId: 'hd1',
+      declinedBy: 'bob',
       reason: 'Too busy',
       sender: 'bob',
       auth: agentBob,
@@ -645,6 +653,108 @@ describe('Streaming', () => {
   });
 });
 
+// ── Subscribe + history replay (RFC-MACP-0006-A1) ────────────────────
+//
+// A late subscriber sends a subscribe-only frame (sessionId + afterSequence)
+// and the runtime replays every accepted envelope for that session before
+// switching to live broadcast. This is what lets non-initiator agents join a
+// session and observe SessionStart + Proposal regardless of spawn order.
+
+describe('Stream subscribe + history replay', () => {
+  it('late subscriber receives previously accepted envelopes via replay', async () => {
+    // Alice starts a session and proposes before Bob ever opens a stream.
+    const aliceSession = new DecisionSession(client, { auth: agentAlice });
+    await aliceSession.start({
+      intent: 'Replay test',
+      participants: ['alice', 'bob'],
+      ttlMs: 30_000,
+      sender: 'alice',
+    });
+    await aliceSession.propose({
+      proposalId: 'replay-p1',
+      option: 'rollout',
+      rationale: 'covered by replay',
+      sender: 'alice',
+    });
+
+    // Bob now opens a stream and subscribes. The runtime must replay the
+    // SessionStart and Proposal that landed before his subscribe frame.
+    const bobClient = makeClient(agentBob);
+    try {
+      const stream = bobClient.openStream();
+      await stream.sendSubscribe(aliceSession.sessionId);
+
+      const seenMessageTypes: string[] = [];
+      const consumer = (async () => {
+        for await (const env of stream.responses()) {
+          if (env.sessionId !== aliceSession.sessionId) continue;
+          seenMessageTypes.push(env.messageType);
+          if (seenMessageTypes.includes('SessionStart') && seenMessageTypes.includes('Proposal')) {
+            break;
+          }
+        }
+      })();
+
+      const timeout = new Promise<void>((_, reject) => setTimeout(() => reject(new Error('replay timeout')), 5000));
+      await Promise.race([consumer, timeout]);
+
+      stream.close();
+      expect(seenMessageTypes).toContain('SessionStart');
+      expect(seenMessageTypes).toContain('Proposal');
+      // Replay must preserve acceptance order: SessionStart was sent first,
+      // Proposal second. The runtime guarantees authoritative ordering, so the
+      // SessionStart index must be strictly less than the Proposal index.
+      expect(seenMessageTypes.indexOf('SessionStart')).toBeLessThan(seenMessageTypes.indexOf('Proposal'));
+    } finally {
+      bobClient.close();
+    }
+  });
+
+  it('sendSubscribe with a future afterSequence skips prior envelopes', async () => {
+    // afterSequence=N means "replay only envelopes with seq > N". Setting it
+    // beyond the last accepted envelope is a valid way for an agent that has
+    // already processed history to resume live-only. We don't assert zero
+    // messages (the runtime may still push a liveness frame), only that the
+    // long-running proposal is not replayed.
+    const aliceSession = new DecisionSession(client, { auth: agentAlice });
+    await aliceSession.start({
+      intent: 'Skip-replay test',
+      participants: ['alice', 'bob'],
+      ttlMs: 30_000,
+      sender: 'alice',
+    });
+    await aliceSession.propose({
+      proposalId: 'skip-p1',
+      option: 'skipped',
+      sender: 'alice',
+    });
+
+    const bobClient = makeClient(agentBob);
+    try {
+      const stream = bobClient.openStream();
+      await stream.sendSubscribe(aliceSession.sessionId, 1_000_000);
+
+      const received: string[] = [];
+      const consumer = (async () => {
+        for await (const env of stream.responses()) {
+          if (env.sessionId !== aliceSession.sessionId) continue;
+          received.push(env.messageType);
+        }
+      })();
+
+      // Give replay a chance to complete, then close; we expect no Proposal
+      // from history because afterSequence is beyond the accepted tail.
+      await new Promise((r) => setTimeout(r, 500));
+      stream.close();
+      await consumer.catch(() => undefined);
+
+      expect(received).not.toContain('Proposal');
+    } finally {
+      bobClient.close();
+    }
+  });
+});
+
 // ── Policy registration ──────────────────────────────────────────────
 
 describe('Policy lifecycle', () => {
@@ -793,7 +903,7 @@ describe.skipIf(!ALICE_TOKEN || !BOB_TOKEN)('Direct-agent auth — pre-allocated
         proposalId: 'da-1',
         recommendation: 'APPROVE',
         confidence: 0.9,
-        analysis: 'Aligned with invariants',
+        reason: 'Aligned with invariants',
       });
       expect(evalAck.ok).toBe(true);
 

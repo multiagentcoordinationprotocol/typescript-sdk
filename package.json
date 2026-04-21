@@ -55,7 +55,7 @@
   "dependencies": {
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",
-    "@multiagentcoordinationprotocol/proto": "^0.1.1",
+    "@multiagentcoordinationprotocol/proto": "^0.1.2",
     "protobufjs": "^8.0.0"
   },
   "devDependencies": {
