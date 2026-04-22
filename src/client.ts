@@ -182,8 +182,7 @@ export class MacpStream {
    * @throws MacpTransportError  If the underlying stream errored.
    */
   async read(timeoutMs?: number): Promise<Envelope | null> {
-    const item =
-      timeoutMs === undefined ? await this.queue.shift() : await this.queue.shiftWithTimeout(timeoutMs);
+    const item = timeoutMs === undefined ? await this.queue.shift() : await this.queue.shiftWithTimeout(timeoutMs);
     if (item === TIMEOUT) {
       throw new MacpTimeoutError(`stream read timed out after ${timeoutMs}ms`);
     }
@@ -540,7 +539,11 @@ export class MacpClient {
       confidence: options.confidence,
       correlationSessionId: options.correlationSessionId,
     });
-    const payload = this.protoRegistry.encodeKnownPayload('', 'Signal', signalPayload as unknown as Record<string, unknown>);
+    const payload = this.protoRegistry.encodeKnownPayload(
+      '',
+      'Signal',
+      signalPayload as unknown as Record<string, unknown>,
+    );
     const envelope = buildEnvelope({
       mode: '',
       messageType: 'Signal',
@@ -572,7 +575,11 @@ export class MacpClient {
       message: options.message,
       targetMessageId: options.targetMessageId,
     });
-    const payload = this.protoRegistry.encodeKnownPayload('', 'Progress', progressPayload as unknown as Record<string, unknown>);
+    const payload = this.protoRegistry.encodeKnownPayload(
+      '',
+      'Progress',
+      progressPayload as unknown as Record<string, unknown>,
+    );
     const envelope = buildEnvelope({
       mode: options.mode ?? '',
       messageType: 'Progress',

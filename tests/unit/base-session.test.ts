@@ -50,9 +50,7 @@ describe('BaseSession / BaseProjection extension point', () => {
 
   it('start() calls client.send with a SessionStart envelope in the custom mode', async () => {
     const client = makeClient();
-    const sendSpy = vi
-      .spyOn(client, 'send')
-      .mockResolvedValue({ ok: true, messageId: 'm1', sessionId: 'sid' });
+    const sendSpy = vi.spyOn(client, 'send').mockResolvedValue({ ok: true, messageId: 'm1', sessionId: 'sid' });
     const session = new SmokeSession(client, { sessionId: '550e8400-e29b-41d4-a716-446655440000' });
 
     const ack = await session.start({
@@ -85,7 +83,7 @@ describe('BaseSession / BaseProjection extension point', () => {
     const client = makeClient();
     const session = new SmokeSession(client);
     // Accessing the protected method via subclass in a one-off
-    const leak = (session as unknown as { senderFor: (s: string | undefined) => string });
+    const leak = session as unknown as { senderFor: (s: string | undefined) => string };
     expect(() => leak.senderFor('mallory')).toThrow(/does not match/);
   });
 

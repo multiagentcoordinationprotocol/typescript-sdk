@@ -15,13 +15,7 @@ export const MODE_MULTI_ROUND = 'ext.multi_round.v1';
  * The five first-class coordination modes. Parity with
  * python-sdk `macp_sdk.constants.STANDARD_MODES`.
  */
-export const STANDARD_MODES = [
-  MODE_DECISION,
-  MODE_PROPOSAL,
-  MODE_TASK,
-  MODE_HANDOFF,
-  MODE_QUORUM,
-] as const;
+export const STANDARD_MODES = [MODE_DECISION, MODE_PROPOSAL, MODE_TASK, MODE_HANDOFF, MODE_QUORUM] as const;
 
 // Well-known error codes. Names match the on-the-wire strings the runtime
 // emits and python-sdk's exports (no ERR_ prefix).

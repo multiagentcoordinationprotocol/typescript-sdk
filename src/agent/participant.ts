@@ -297,8 +297,7 @@ export class Participant {
       messageType: envelope.messageType,
       sender: envelope.sender,
       payload,
-      proposalId:
-        (payload as Record<string, string>).proposalId ?? (payload as Record<string, string>).proposal_id,
+      proposalId: (payload as Record<string, string>).proposalId ?? (payload as Record<string, string>).proposal_id,
       raw: envelope,
       seq: 0,
     };
@@ -330,8 +329,8 @@ export class Participant {
     const ctx = this.buildHandlerContext();
 
     if (this.session && message.raw) {
-      const applyMethod = (this.session as { projection: { applyEnvelope: (...args: unknown[]) => void } })
-        .projection.applyEnvelope;
+      const applyMethod = (this.session as { projection: { applyEnvelope: (...args: unknown[]) => void } }).projection
+        .applyEnvelope;
       if (typeof applyMethod === 'function') {
         applyMethod.call(
           (this.session as { projection: ProjectionLike }).projection,

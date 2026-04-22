@@ -1,10 +1,6 @@
 import { assertSenderMatchesIdentity, authSender, type AuthConfig } from './auth';
 import type { MacpClient, MacpStream } from './client';
-import {
-  DEFAULT_CONFIGURATION_VERSION,
-  DEFAULT_MODE_VERSION,
-  DEFAULT_POLICY_VERSION,
-} from './constants';
+import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION } from './constants';
 import {
   buildCommitmentPayload,
   buildEnvelope,

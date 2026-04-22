@@ -139,10 +139,7 @@ describe('strategies', () => {
 
     it('integrates with votingHandler — gate blocks when shouldVote is false', async () => {
       const decideVote = vi.fn();
-      const strategy = functionVoter(
-        () => false,
-        decideVote,
-      );
+      const strategy = functionVoter(() => false, decideVote);
       const handler = votingHandler(strategy);
       const ctx = makeContext();
       await handler(makeMessage('Evaluation', { proposalId: 'p1' }), ctx);
@@ -171,10 +168,7 @@ describe('strategies', () => {
 
     it('integrates with commitmentHandler — gate blocks when shouldCommit is false', async () => {
       const decideCommitment = vi.fn();
-      const strategy = functionCommitter(
-        () => false,
-        decideCommitment,
-      );
+      const strategy = functionCommitter(() => false, decideCommitment);
       const handler = commitmentHandler(strategy);
       const ctx = makeContext();
       await handler(makeMessage('Vote'), ctx);

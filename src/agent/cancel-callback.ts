@@ -41,9 +41,7 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-export function startCancelCallbackServer(
-  options: CancelCallbackServerOptions,
-): Promise<CancelCallbackServer> {
+export function startCancelCallbackServer(options: CancelCallbackServerOptions): Promise<CancelCallbackServer> {
   const path = normalisePath(options.path);
 
   return new Promise((resolve, reject) => {

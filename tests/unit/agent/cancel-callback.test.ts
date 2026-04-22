@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  startCancelCallbackServer,
-  type CancelCallbackServer,
-} from '../../../src/agent/cancel-callback';
+import { startCancelCallbackServer, type CancelCallbackServer } from '../../../src/agent/cancel-callback';
 
-async function post(url: string, body: Record<string, unknown> | string | undefined): Promise<{ status: number; text: string }> {
-  const payload =
-    body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
+async function post(
+  url: string,
+  body: Record<string, unknown> | string | undefined,
+): Promise<{ status: number; text: string }> {
+  const payload = body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

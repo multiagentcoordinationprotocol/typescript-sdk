@@ -49,10 +49,7 @@ export class MacpAckError extends MacpSdkError {
     };
   }
 
-  private static _extractReasons(
-    ack: Ack,
-    grpcMetadata?: Array<{ key: string; value: string | Buffer }>,
-  ): string[] {
+  private static _extractReasons(ack: Ack, grpcMetadata?: Array<{ key: string; value: string | Buffer }>): string[] {
     // First try: parse from ack.error.details (matches Python _parse_ack_reasons)
     const fromDetails = MacpAckError._parseAckReasons(ack);
     if (fromDetails.length > 0) return fromDetails;
@@ -73,9 +70,7 @@ export class MacpAckError extends MacpSdkError {
     }
   }
 
-  private static _parseGrpcMetadataReasons(
-    grpcMetadata?: Array<{ key: string; value: string | Buffer }>,
-  ): string[] {
+  private static _parseGrpcMetadataReasons(grpcMetadata?: Array<{ key: string; value: string | Buffer }>): string[] {
     if (!grpcMetadata) return [];
     try {
       for (const item of grpcMetadata) {

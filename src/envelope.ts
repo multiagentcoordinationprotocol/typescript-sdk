@@ -107,10 +107,7 @@ export function buildProgressPayload(input: {
   };
 }
 
-type ProtoSerializable =
-  | { serializeBinary(): Uint8Array }
-  | { toBinary(): Uint8Array }
-  | { finish(): Uint8Array };
+type ProtoSerializable = { serializeBinary(): Uint8Array } | { toBinary(): Uint8Array } | { finish(): Uint8Array };
 
 export function serializeMessage(message: ProtoSerializable | unknown): Uint8Array {
   // Parity with python-sdk `envelope.serialize_message`: invoke the protobuf

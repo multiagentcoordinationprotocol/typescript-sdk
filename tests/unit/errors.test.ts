@@ -133,10 +133,9 @@ describe('Error classes', () => {
 
     it('falls back to gRPC trailing metadata for reasons when details absent', () => {
       const trailing = Buffer.from(JSON.stringify({ reasons: ['tenant mismatch'] }));
-      const err = new MacpAckError(
-        { ok: false, error: { code: 'POLICY_DENIED', message: 'denied' } },
-        [{ key: 'macp-error-details-bin', value: trailing }],
-      );
+      const err = new MacpAckError({ ok: false, error: { code: 'POLICY_DENIED', message: 'denied' } }, [
+        { key: 'macp-error-details-bin', value: trailing },
+      ]);
       expect(err.failure.reasons).toEqual(['tenant mismatch']);
     });
 
