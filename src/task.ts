@@ -98,7 +98,7 @@ export class TaskSession {
     return this.sendAndTrack(envelope, this.auth);
   }
 
-  async request(input: TaskRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+  async requestTask(input: TaskRequestPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
     validateRequiredField('title', input.title);
     validateRequiredField('instructions', input.instructions);
@@ -136,7 +136,7 @@ export class TaskSession {
     return this.sendAndTrack(envelope, input.auth);
   }
 
-  async update(input: TaskUpdatePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+  async updateTask(input: TaskUpdatePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
     const envelope = buildEnvelope({
       mode: MODE_TASK,
@@ -148,7 +148,7 @@ export class TaskSession {
     return this.sendAndTrack(envelope, input.auth);
   }
 
-  async complete(input: TaskCompletePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+  async completeTask(input: TaskCompletePayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
     const envelope = buildEnvelope({
       mode: MODE_TASK,
@@ -160,7 +160,7 @@ export class TaskSession {
     return this.sendAndTrack(envelope, input.auth);
   }
 
-  async fail(input: TaskFailPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
+  async failTask(input: TaskFailPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
     validateRequiredField('taskId', input.taskId);
     const envelope = buildEnvelope({
       mode: MODE_TASK,

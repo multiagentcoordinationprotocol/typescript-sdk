@@ -141,10 +141,10 @@ import { TaskSession } from 'macp-sdk-typescript';
 
 const session = new TaskSession(client);
 await session.start({ intent: '...', participants: ['worker'], ttlMs: 120_000 });
-await session.request({ taskId: 't1', title: 'Build feature', instructions: '...' });
+await session.requestTask({ taskId: 't1', title: 'Build feature', instructions: '...' });
 await session.acceptTask({ taskId: 't1', assignee: 'worker' });
-await session.update({ taskId: 't1', status: 'working', progress: 0.5, message: 'halfway' });
-await session.complete({ taskId: 't1', assignee: 'worker', summary: 'done' });
+await session.updateTask({ taskId: 't1', status: 'working', progress: 0.5, message: 'halfway' });
+await session.completeTask({ taskId: 't1', assignee: 'worker', summary: 'done' });
 await session.commit({ action: 'task.completed', authorityScope: 'lead', reason: '...' });
 
 // Projection queries

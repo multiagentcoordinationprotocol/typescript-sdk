@@ -63,20 +63,9 @@ describe('HandoffSession — projection roundtrip', () => {
     expect(record?.contextContentType).toBe('application/json');
   });
 
-  it('deprecated sendContext() still works and routes through addContext', async () => {
-    const client = makeClient();
-    const session = new HandoffSession(client);
-    vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
-    // Silence the one-shot deprecation warning so test output stays clean.
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const addContextSpy = vi.spyOn(session, 'addContext');
-
-    await session.offer({ handoffId: 'h1', targetParticipant: 'bob', scope: 'ops' });
-    await session.sendContext({ handoffId: 'h1', contentType: 'text/plain' });
-
-    expect(addContextSpy).toHaveBeenCalledTimes(1);
-    expect(session.projection.getHandoff('h1')?.contextContentType).toBe('text/plain');
-    warnSpy.mockRestore();
+  it('sendContext alias removed in 0.3.0 (use addContext)', () => {
+    const session = new HandoffSession(makeClient());
+    expect((session as unknown as { sendContext?: unknown }).sendContext).toBeUndefined();
   });
 
   it('acceptHandoff() flips isAccepted()', async () => {

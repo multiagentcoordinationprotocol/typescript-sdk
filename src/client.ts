@@ -10,8 +10,8 @@ import * as path from 'node:path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { assertSenderMatchesIdentity, authSender, type AuthConfig, metadataFromAuth } from './auth';
-import { buildEnvelope } from './envelope';
-import { MacpAckError, MacpSdkError, MacpTransportError } from './errors';
+import { buildEnvelope, buildProgressPayload, buildSignalPayload } from './envelope';
+import { MacpAckError, MacpSdkError, MacpTimeoutError, MacpTransportError } from './errors';
 import { ProtoRegistry } from './proto-registry';
 import { validateSignalType } from './validation';
 import type {
@@ -57,12 +57,44 @@ class AsyncQueue<T> {
     else this.items.push(item);
   }
 
+  unshift(item: T): void {
+    this.items.unshift(item);
+  }
+
   shift(): Promise<T> {
     const item = this.items.shift();
     if (item !== undefined) return Promise.resolve(item);
     return new Promise<T>((resolve) => this.resolvers.push(resolve));
   }
+
+  shiftWithTimeout(timeoutMs: number): Promise<T | typeof TIMEOUT> {
+    const item = this.items.shift();
+    if (item !== undefined) return Promise.resolve(item);
+    return new Promise<T | typeof TIMEOUT>((resolve) => {
+      let settled = false;
+      const resolver = (value: T): void => {
+        if (settled) {
+          // Timeout already fired; put the value back so it isn't lost.
+          this.items.unshift(value);
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      };
+      this.resolvers.push(resolver);
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        const idx = this.resolvers.indexOf(resolver);
+        if (idx >= 0) this.resolvers.splice(idx, 1);
+        resolve(TIMEOUT);
+      }, timeoutMs);
+    });
+  }
 }
+
+const TIMEOUT = Symbol('stream-read-timeout');
 
 const STREAM_END = Symbol('stream-end');
 
@@ -126,10 +158,41 @@ export class MacpStream {
   async *responses(): AsyncGenerator<Envelope, void, void> {
     while (true) {
       const item = await this.queue.shift();
-      if (item === STREAM_END) return;
+      if (item === STREAM_END) {
+        // Re-push so a subsequent read()/responses() call also observes end-of-stream.
+        this.queue.unshift(STREAM_END);
+        return;
+      }
       if (item instanceof Error) throw item;
       yield item;
     }
+  }
+
+  /**
+   * Read a single envelope from the stream. Parity with python-sdk's
+   * {@code MacpStream.read(timeout)}.
+   *
+   * @param timeoutMs  Maximum time to wait for the next envelope. If omitted,
+   *                   blocks indefinitely until an envelope arrives, the stream
+   *                   ends, or an error occurs.
+   * @returns          The next envelope, or {@code null} if the stream has
+   *                   ended.
+   * @throws MacpTimeoutError  If {@code timeoutMs} elapses before an envelope
+   *                           arrives.
+   * @throws MacpTransportError  If the underlying stream errored.
+   */
+  async read(timeoutMs?: number): Promise<Envelope | null> {
+    const item = timeoutMs === undefined ? await this.queue.shift() : await this.queue.shiftWithTimeout(timeoutMs);
+    if (item === TIMEOUT) {
+      throw new MacpTimeoutError(`stream read timed out after ${timeoutMs}ms`);
+    }
+    if (item === STREAM_END) {
+      // Re-push so future calls (including responses()) also observe the end.
+      this.queue.unshift(STREAM_END);
+      return null;
+    }
+    if (item instanceof Error) throw item;
+    return item;
   }
 
   close(): void {
@@ -159,7 +222,7 @@ export class MacpClient {
     }
     this.defaultDeadlineMs = options.defaultDeadlineMs;
     this.clientName = options.clientName ?? 'macp-sdk-typescript';
-    this.clientVersion = options.clientVersion ?? '0.2.0';
+    this.clientVersion = options.clientVersion ?? '0.3.0';
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { protoDir: defaultProtoDir } = require('@multiagentcoordinationprotocol/proto');
     const protoDir = options.protoDir ?? defaultProtoDir;
@@ -470,12 +533,17 @@ export class MacpClient {
     validateSignalType(options.signalType, options.data);
     const auth = this.requireAuth(options.auth);
     assertSenderMatchesIdentity(auth, options.sender);
-    const payload = this.protoRegistry.encodeKnownPayload('', 'Signal', {
+    const signalPayload = buildSignalPayload({
       signalType: options.signalType,
-      data: options.data ?? Buffer.alloc(0),
-      confidence: options.confidence ?? 0,
-      correlationSessionId: options.correlationSessionId ?? '',
+      data: options.data,
+      confidence: options.confidence,
+      correlationSessionId: options.correlationSessionId,
     });
+    const payload = this.protoRegistry.encodeKnownPayload(
+      '',
+      'Signal',
+      signalPayload as unknown as Record<string, unknown>,
+    );
     const envelope = buildEnvelope({
       mode: '',
       messageType: 'Signal',
@@ -500,13 +568,18 @@ export class MacpClient {
   }): Promise<Ack> {
     const auth = this.requireAuth(options.auth);
     assertSenderMatchesIdentity(auth, options.sender);
-    const payload = this.protoRegistry.encodeKnownPayload('', 'Progress', {
+    const progressPayload = buildProgressPayload({
       progressToken: options.progressToken,
       progress: options.progress,
       total: options.total,
-      message: options.message ?? '',
-      targetMessageId: options.targetMessageId ?? '',
+      message: options.message,
+      targetMessageId: options.targetMessageId,
     });
+    const payload = this.protoRegistry.encodeKnownPayload(
+      '',
+      'Progress',
+      progressPayload as unknown as Record<string, unknown>,
+    );
     const envelope = buildEnvelope({
       mode: options.mode ?? '',
       messageType: 'Progress',

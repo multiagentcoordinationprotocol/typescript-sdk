@@ -1,3 +1,4 @@
+export * from './projections/base';
 export * from './projections/decision';
 export * from './projections/proposal';
 export * from './projections/task';

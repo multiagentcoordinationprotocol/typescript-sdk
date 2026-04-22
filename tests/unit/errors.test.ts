@@ -7,6 +7,7 @@ import {
   MacpTimeoutError,
   MacpRetryError,
   MacpIdentityMismatchError,
+  type AckFailure,
 } from '../../src/errors';
 
 describe('Error classes', () => {
@@ -77,14 +78,14 @@ describe('Error classes', () => {
     expect(err.message).toContain('mallory');
   });
 
-  describe('MacpAckError.reasons', () => {
+  describe('MacpAckError.failure.reasons', () => {
     it('parses reasons from details buffer', () => {
       const details = Buffer.from(JSON.stringify({ reasons: ['policy mismatch', 'missing field'] }));
       const err = new MacpAckError({
         ok: false,
         error: { code: 'POLICY_DENIED', message: 'denied', details },
       });
-      expect(err.reasons).toEqual(['policy mismatch', 'missing field']);
+      expect(err.failure.reasons).toEqual(['policy mismatch', 'missing field']);
     });
 
     it('returns empty array when no details', () => {
@@ -92,7 +93,7 @@ describe('Error classes', () => {
         ok: false,
         error: { code: 'POLICY_DENIED', message: 'denied' },
       });
-      expect(err.reasons).toEqual([]);
+      expect(err.failure.reasons).toEqual([]);
     });
 
     it('returns empty array on malformed JSON', () => {
@@ -100,7 +101,7 @@ describe('Error classes', () => {
         ok: false,
         error: { code: 'POLICY_DENIED', message: 'denied', details: Buffer.from('not json') },
       });
-      expect(err.reasons).toEqual([]);
+      expect(err.failure.reasons).toEqual([]);
     });
 
     it('returns empty array when reasons is not an array', () => {
@@ -109,7 +110,53 @@ describe('Error classes', () => {
         ok: false,
         error: { code: 'POLICY_DENIED', message: 'denied', details },
       });
-      expect(err.reasons).toEqual([]);
+      expect(err.failure.reasons).toEqual([]);
+    });
+  });
+
+  describe('MacpAckError.failure', () => {
+    it('populates the structured failure shape from the ACK error', () => {
+      const details = Buffer.from(JSON.stringify({ reasons: ['r1', 'r2'] }));
+      const err = new MacpAckError({
+        ok: false,
+        messageId: 'm-1',
+        sessionId: 's-1',
+        error: { code: 'POLICY_DENIED', message: 'denied', details },
+      });
+      const failure: AckFailure = err.failure;
+      expect(failure.code).toBe('POLICY_DENIED');
+      expect(failure.message).toBe('denied');
+      expect(failure.sessionId).toBe('s-1');
+      expect(failure.messageId).toBe('m-1');
+      expect(failure.reasons).toEqual(['r1', 'r2']);
+    });
+
+    it('falls back to gRPC trailing metadata for reasons when details absent', () => {
+      const trailing = Buffer.from(JSON.stringify({ reasons: ['tenant mismatch'] }));
+      const err = new MacpAckError({ ok: false, error: { code: 'POLICY_DENIED', message: 'denied' } }, [
+        { key: 'macp-error-details-bin', value: trailing },
+      ]);
+      expect(err.failure.reasons).toEqual(['tenant mismatch']);
+    });
+
+    it('defaults code/message to sentinels when ack.error absent', () => {
+      const err = new MacpAckError({ ok: false });
+      expect(err.failure.code).toBe('UNKNOWN');
+      expect(err.failure.message).toBe('runtime returned nack');
+      expect(err.failure.sessionId).toBe('');
+      expect(err.failure.messageId).toBe('');
+      expect(err.failure.reasons).toEqual([]);
+    });
+
+    it('prefers ack-level IDs over nested error IDs when both are present', () => {
+      const err = new MacpAckError({
+        ok: false,
+        sessionId: 'from-ack',
+        messageId: 'm-ack',
+        error: { code: 'X', message: 'y', sessionId: 'from-error', messageId: 'm-error' },
+      });
+      expect(err.failure.sessionId).toBe('from-ack');
+      expect(err.failure.messageId).toBe('m-ack');
     });
   });
 });

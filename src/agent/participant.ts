@@ -3,14 +3,18 @@ import type { MacpClient } from '../client';
 import { MODE_DECISION, MODE_HANDOFF, MODE_PROPOSAL, MODE_QUORUM, MODE_TASK } from '../constants';
 import { DecisionSession } from '../decision';
 import { HandoffSession } from '../handoff';
+import { logger } from '../logging';
 import { DecisionProjection } from '../projections/decision';
 import { ProposalSession } from '../proposal';
 import { QuorumSession } from '../quorum';
 import { TaskSession } from '../task';
+import type { Envelope } from '../types';
+import { startCancelCallbackServer, type CancelCallbackServer } from './cancel-callback';
 import { Dispatcher } from './dispatcher';
 import { GrpcTransportAdapter, type TransportAdapter } from './transports';
 import type {
   HandlerContext,
+  IncomingMessage,
   MessageHandler,
   PhaseChangeHandler,
   ProjectionLike,
@@ -20,11 +24,15 @@ import type {
   TerminalResult,
 } from './types';
 
+const TERMINAL_PHASES = new Set(['Committed', 'Accepted', 'Declined', 'Cancelled', 'TerminalRejected']);
+
 export interface InitiatorConfig {
   sessionStart: {
     intent: string;
     participants: string[];
     ttlMs: number;
+    contextId?: string;
+    extensions?: Record<string, Buffer>;
     context?: Record<string, unknown>;
     roots?: Array<{ uri: string; name?: string }>;
   };
@@ -46,6 +54,13 @@ export interface ParticipantConfig {
   policyVersion?: string;
   transport?: TransportAdapter;
   initiator?: InitiatorConfig;
+  /**
+   * Bind a cancel-callback HTTP endpoint (RFC-0001 §7.2 Option A) when
+   * this participant's event loop starts. The server is closed
+   * automatically when {@link Participant.stop} is called. Parity with
+   * python-sdk's bootstrap `cancel_callback` field.
+   */
+  cancelCallback?: { host: string; port: number; path: string };
 }
 
 type ModeSession = DecisionSession | ProposalSession | TaskSession | HandoffSession | QuorumSession;
@@ -63,8 +78,14 @@ export class Participant {
   private readonly session: ModeSession | null;
   private readonly transport: TransportAdapter;
   private readonly initiatorConfig?: InitiatorConfig;
+  private readonly participants: string[];
+  private readonly modeVersion?: string;
+  private readonly configurationVersion?: string;
+  private readonly policyVersion?: string;
   private running = false;
   private lastPhase: string;
+  private cancelCallbackServer?: CancelCallbackServer;
+  private readonly cancelCallbackConfig?: { host: string; port: number; path: string };
 
   constructor(config: ParticipantConfig) {
     this.participantId = config.participantId;
@@ -89,6 +110,11 @@ export class Participant {
     this.actions = this.buildActions();
     this.transport = config.transport ?? new GrpcTransportAdapter(config.client, config.sessionId, config.auth);
     this.initiatorConfig = config.initiator;
+    this.participants = config.participants ?? [];
+    this.modeVersion = config.modeVersion;
+    this.configurationVersion = config.configurationVersion;
+    this.policyVersion = config.policyVersion;
+    this.cancelCallbackConfig = config.cancelCallback;
   }
 
   private createModeSession(
@@ -223,83 +249,138 @@ export class Participant {
     return this;
   }
 
+  /** Whether {@link stop} has been called (or the loop has exited). */
+  get isStopped(): boolean {
+    return !this.running;
+  }
+
   async run(): Promise<void> {
     if (this.running) return;
     this.running = true;
+
+    if (this.cancelCallbackConfig && !this.cancelCallbackServer) {
+      this.cancelCallbackServer = await startCancelCallbackServer({
+        host: this.cancelCallbackConfig.host,
+        port: this.cancelCallbackConfig.port,
+        path: this.cancelCallbackConfig.path,
+        onCancel: () => {
+          void this.stop();
+        },
+      });
+    }
 
     if (this.initiatorConfig && this.session) {
       await this.emitInitiatorEnvelopes();
     }
 
-    const sessionInfo: SessionInfo = {
-      sessionId: this.sessionId,
-      mode: this.mode,
-      participants: [],
-      policyVersion: undefined,
-    };
-
     try {
       for await (const message of this.transport.start()) {
         if (!this.running) break;
-
-        const ctx: HandlerContext = {
-          participant: this,
-          projection: this.projection,
-          actions: this.actions,
-          session: sessionInfo,
-          log: (msg: string, details?: Record<string, unknown>) => {
-            // eslint-disable-next-line no-console
-            console.log(`[${this.participantId}] ${msg}`, details ?? '');
-          },
-        };
-
-        // Apply envelope to projection if we have a mode session
-        if (this.session && message.raw) {
-          const applyMethod = (this.session as { projection: { applyEnvelope: (...args: unknown[]) => void } })
-            .projection.applyEnvelope;
-          if (typeof applyMethod === 'function') {
-            applyMethod.call(
-              (this.session as { projection: ProjectionLike }).projection,
-              message.raw,
-              this.client.protoRegistry,
-            );
-          }
-        }
-
-        // Dispatch message
-        await this.dispatcher.dispatch(message, ctx);
-
-        // Check for phase change
-        const currentPhase = this.projection.phase;
-        if (currentPhase !== this.lastPhase) {
-          this.lastPhase = currentPhase;
-          await this.dispatcher.dispatchPhaseChange(currentPhase, ctx);
-
-          // Check for terminal state
-          if (
-            currentPhase === 'Committed' ||
-            currentPhase === 'Accepted' ||
-            currentPhase === 'Declined' ||
-            currentPhase === 'Cancelled' ||
-            currentPhase === 'TerminalRejected'
-          ) {
-            const terminalResult: TerminalResult = {
-              state: currentPhase,
-              commitment: (this.projection as { commitment?: Record<string, unknown> }).commitment,
-            };
-            await this.dispatcher.dispatchTerminal(terminalResult);
-            break;
-          }
-        }
+        const reachedTerminal = await this.processMessage(message);
+        if (reachedTerminal) break;
       }
     } finally {
       this.running = false;
     }
   }
 
+  /**
+   * Manually process a single envelope. Parity with python-sdk's
+   * {@code Participant.process_event}. Useful for deterministic unit tests
+   * and for driving the participant from a foreign event loop without
+   * installing a {@link TransportAdapter}.
+   */
+  async processEvent(envelope: Envelope): Promise<void> {
+    const payload =
+      this.client.protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload) ?? {};
+    const message: IncomingMessage = {
+      messageType: envelope.messageType,
+      sender: envelope.sender,
+      payload,
+      proposalId: (payload as Record<string, string>).proposalId ?? (payload as Record<string, string>).proposal_id,
+      raw: envelope,
+      seq: 0,
+    };
+    await this.processMessage(message);
+  }
+
+  private buildHandlerContext(): HandlerContext {
+    const sessionInfo: SessionInfo = {
+      sessionId: this.sessionId,
+      mode: this.mode,
+      participants: this.participants,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+      policyVersion: this.policyVersion,
+    };
+    return {
+      participant: this,
+      projection: this.projection,
+      actions: this.actions,
+      session: sessionInfo,
+      log: (msg: string, details?: Record<string, unknown>) => {
+        logger.debug(`[${this.participantId}] ${msg}`, details ?? '');
+      },
+    };
+  }
+
+  /** Returns true if a terminal state was reached. */
+  private async processMessage(message: IncomingMessage): Promise<boolean> {
+    const ctx = this.buildHandlerContext();
+
+    if (this.session && message.raw) {
+      const applyMethod = (this.session as { projection: { applyEnvelope: (...args: unknown[]) => void } }).projection
+        .applyEnvelope;
+      if (typeof applyMethod === 'function') {
+        applyMethod.call(
+          (this.session as { projection: ProjectionLike }).projection,
+          message.raw,
+          this.client.protoRegistry,
+        );
+      }
+    }
+
+    await this.dispatcher.dispatch(message, ctx);
+
+    const currentPhase = this.projection.phase;
+    if (currentPhase !== this.lastPhase) {
+      this.lastPhase = currentPhase;
+      await this.dispatcher.dispatchPhaseChange(currentPhase, ctx);
+
+      if (TERMINAL_PHASES.has(currentPhase)) {
+        const terminalResult: TerminalResult = {
+          state: currentPhase,
+          commitment: (this.projection as { commitment?: Record<string, unknown> }).commitment,
+        };
+        await this.dispatcher.dispatchTerminal(terminalResult);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   async stop(): Promise<void> {
     this.running = false;
     await this.transport.stop();
+    if (this.cancelCallbackServer) {
+      const srv = this.cancelCallbackServer;
+      this.cancelCallbackServer = undefined;
+      try {
+        await srv.close();
+      } catch (err) {
+        logger.debug('cancel_callback close failed', err);
+      }
+    }
+  }
+
+  /**
+   * Attach a running cancel-callback HTTP server to this participant.
+   * The server is closed automatically when {@link stop} is called.
+   * Parity with python-sdk's `Participant.attach_cancel_callback_server`.
+   */
+  attachCancelCallbackServer(server: CancelCallbackServer): void {
+    this.cancelCallbackServer = server;
   }
 
   private async emitInitiatorEnvelopes(): Promise<void> {
@@ -311,6 +392,8 @@ export class Participant {
         intent: ss.intent,
         participants: ss.participants,
         ttlMs: ss.ttlMs,
+        contextId: ss.contextId,
+        extensions: ss.extensions,
         roots: ss.roots,
       });
     }

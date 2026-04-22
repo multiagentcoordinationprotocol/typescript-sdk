@@ -192,6 +192,105 @@ describe('fromBootstrap', () => {
       const participant = fromBootstrap(filePath);
       expect(participant.participantId).toBe('agent-1');
     });
+
+    // SDK-TS-1: bootstrap payloads from examples-service carry `context_id`
+    // and `extensions` alongside `session_start`. The runner used to drop
+    // both; these tests pin that they now flow through into the initiator
+    // config so `emitInitiatorEnvelopes` can forward them.
+    it('decodes context_id and extensions from the bootstrap payload', async () => {
+      // Round-trip: construct the Participant via fromBootstrap, then spy on
+      // DecisionSession.prototype.start and drive a run() to confirm both
+      // fields land on the SessionStart call with the correct shape.
+      const { DecisionSession } = await import('../../../src/decision');
+      const startSpy = vi
+        .spyOn(DecisionSession.prototype, 'start')
+        .mockResolvedValue({ ok: true, envelopeId: 'env-1' } as any);
+
+      const filePath = writeTempBootstrap(
+        validPayload({
+          initiator: {
+            session_start: {
+              intent: 'decide with context',
+              participants: ['agent-1', 'agent-2'],
+              ttl_ms: 15_000,
+              context_id: 'ctx-upstream-99',
+              extensions: {
+                'aitp.tct': { token: 't-abc', issuer: 'iss-1' },
+                'ctxm.ref': 'pack:example-001',
+              },
+            },
+          },
+        }),
+      );
+
+      const participant = fromBootstrap(filePath);
+
+      // Prevent the fake transport from yielding anything; we only care
+      // about the initiator-side start() call.
+      (participant as any).transport = {
+        async *start(): AsyncIterable<never> {
+          /* empty */
+        },
+        async stop(): Promise<void> {
+          /* noop */
+        },
+      };
+
+      await participant.run();
+
+      expect(startSpy).toHaveBeenCalledTimes(1);
+      const arg = startSpy.mock.calls[0]![0];
+      expect(arg.contextId).toBe('ctx-upstream-99');
+      expect(arg.extensions).toBeDefined();
+      // JSON-native bootstrap values are UTF-8 JSON-encoded into bytes so
+      // the envelope's Record<string, Buffer> contract is satisfied.
+      expect(arg.extensions!['aitp.tct']).toBeInstanceOf(Buffer);
+      expect(JSON.parse(arg.extensions!['aitp.tct']!.toString('utf8'))).toEqual({
+        token: 't-abc',
+        issuer: 'iss-1',
+      });
+      expect(arg.extensions!['ctxm.ref']!.toString('utf8')).toBe('"pack:example-001"');
+
+      startSpy.mockRestore();
+    });
+
+    it('omits context_id / extensions when absent from bootstrap (backwards-compatible)', async () => {
+      const { DecisionSession } = await import('../../../src/decision');
+      const startSpy = vi
+        .spyOn(DecisionSession.prototype, 'start')
+        .mockResolvedValue({ ok: true, envelopeId: 'env-1' } as any);
+
+      const filePath = writeTempBootstrap(
+        validPayload({
+          initiator: {
+            session_start: {
+              intent: 'no upstream context',
+              participants: ['agent-1'],
+              ttl_ms: 10_000,
+            },
+          },
+        }),
+      );
+
+      const participant = fromBootstrap(filePath);
+      (participant as any).transport = {
+        async *start(): AsyncIterable<never> {
+          /* empty */
+        },
+        async stop(): Promise<void> {
+          /* noop */
+        },
+      };
+
+      await participant.run();
+
+      expect(startSpy).toHaveBeenCalledTimes(1);
+      const arg = startSpy.mock.calls[0]![0];
+      expect(arg.contextId).toBeUndefined();
+      expect(arg.extensions).toBeUndefined();
+
+      startSpy.mockRestore();
+    });
   });
 
   describe('error handling', () => {
@@ -215,6 +314,28 @@ describe('fromBootstrap', () => {
     it('accepts secure: false when allow_insecure: true is also set', () => {
       const filePath = writeTempBootstrap(validPayload({ secure: false, allow_insecure: true }));
       expect(() => fromBootstrap(filePath)).not.toThrow();
+    });
+  });
+
+  describe('cancel_callback (RFC-0001 §7.2 Option A)', () => {
+    it('forwards cancel_callback fields into the Participant config', async () => {
+      const filePath = writeTempBootstrap(
+        validPayload({
+          cancel_callback: { host: '127.0.0.1', port: 0, path: '/cancel' },
+        }),
+      );
+      const participant = fromBootstrap(filePath);
+      // Private field access via cast — verify the runner passed it through.
+      const cfg = (participant as unknown as { cancelCallbackConfig?: { host: string; port: number; path: string } })
+        .cancelCallbackConfig;
+      expect(cfg).toEqual({ host: '127.0.0.1', port: 0, path: '/cancel' });
+    });
+
+    it('omits cancelCallback when bootstrap has no cancel_callback field', () => {
+      const filePath = writeTempBootstrap(validPayload());
+      const participant = fromBootstrap(filePath);
+      const cfg = (participant as unknown as { cancelCallbackConfig?: unknown }).cancelCallbackConfig;
+      expect(cfg).toBeUndefined();
     });
   });
 });

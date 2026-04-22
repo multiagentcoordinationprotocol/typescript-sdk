@@ -4,7 +4,96 @@ All notable changes to `macp-sdk-typescript` are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-04-21
+
+Parity release — brings TypeScript SDK to full feature parity with
+`macp-sdk-python` 0.3.0. Plan: `plans/sdk-parity-plan.md`.
+
+### Added
+
+- **Cancel-callback server** (Gap B, RFC-0001 §7.2 Option A):
+  `startCancelCallbackServer({ host, port, path, onCancel })` returns a
+  handle backed by Node's `http` module; `Participant` starts the server
+  automatically when `ParticipantConfig.cancelCallback` is set and closes
+  it on `stop()`. `fromBootstrap()` wires the new `cancel_callback`
+  field in the bootstrap JSON. Exports:
+  `startCancelCallbackServer`, `CancelCallbackServer`, `CancelHandler`.
+- **Function-wrapped voting and commitment strategies** (Gap C):
+  `functionVoter(shouldVote, decideVote)` and
+  `functionCommitter(shouldCommit, decideCommitment)` in
+  `src/agent/strategies.ts` — the low-friction way to plug a custom rule
+  into a `Participant` without a class.
+- **Standalone signal and progress builders** (Gap D):
+  `buildSignalPayload(input)` and `buildProgressPayload(input)` in
+  `src/envelope.ts`. `MacpClient.sendSignal` / `sendProgress` now use
+  the shared builders internally.
+- **`serializeMessage(msg)` helper** (Gap N) — parity with
+  `python-sdk envelope.serialize_message`; dispatches to
+  `serializeBinary()` / `toBinary()` / `finish()` on the passed
+  protobuf message.
+- **Structured logger** (Gap G): `src/logging.ts` exports `logger` with
+  `error`/`warn`/`info`/`debug` level methods and `configureLogging({ level, sink })`.
+  Reads `MACP_LOG_LEVEL` on module init (default `warn`). The two
+  remaining `console.*` callsites in `src/agent/participant.ts` and
+  `src/handoff.ts` now route through the structured logger.
+- **`AckFailure` shape** (Gap I): structured NACK record exported from
+  `src/errors.ts`. Populated on `MacpAckError.failure` from both
+  `ack.error.details` and gRPC trailing metadata.
+- **`BaseSession` / `BaseProjection`** (Gap J): abstract extension
+  points exported from `src/base-session.ts` and `src/projections/base.ts`
+  for custom mode helpers (modes registered via `registerExtMode`).
+  Mirrors `python-sdk`'s `BaseSession` / `BaseProjection`.
+- **Named policy rule interfaces** (Gap K): `VotingRules`,
+  `ObjectionHandlingRules`, `EvaluationRules`, `CommitmentRules`,
+  `QuorumThreshold`, `AbstentionRules`, `ProposalAcceptanceRules`,
+  `CounterProposalRules`, `RejectionRules`, `TaskAssignmentRules`,
+  `TaskCompletionRules`, `HandoffAcceptanceRules` now exported as
+  first-class interfaces matching `macp-sdk-python` exports.
+- **`STANDARD_MODES` tuple** (Gap L) in `src/constants.ts`.
+- **Parity examples** (Gap M): `examples/policy-registration.ts`,
+  `examples/agent-policy-aware.ts`, `examples/direct-agent-auth-initiator.ts`,
+  `examples/direct-agent-auth-observer.ts`.
+
+### Changed
+
+- **Error-code constants renamed** (Gap F, breaking): dropped the
+  `ERR_` prefix so TS constants match the on-the-wire strings and the
+  `macp-sdk-python` exports. Rename table —
+  `ERR_UNSUPPORTED_PROTOCOL_VERSION` → `UNSUPPORTED_PROTOCOL_VERSION`,
+  `ERR_INVALID_ENVELOPE` → `INVALID_ENVELOPE`,
+  `ERR_SESSION_NOT_FOUND` → `SESSION_NOT_FOUND`,
+  `ERR_SESSION_NOT_OPEN` → `SESSION_NOT_OPEN`,
+  `ERR_SESSION_ALREADY_EXISTS` → `SESSION_ALREADY_EXISTS`,
+  `ERR_MODE_NOT_SUPPORTED` → `MODE_NOT_SUPPORTED`,
+  `ERR_FORBIDDEN` → `FORBIDDEN`,
+  `ERR_UNAUTHENTICATED` → `UNAUTHENTICATED`,
+  `ERR_DUPLICATE_MESSAGE` → `DUPLICATE_MESSAGE`,
+  `ERR_PAYLOAD_TOO_LARGE` → `PAYLOAD_TOO_LARGE`,
+  `ERR_RATE_LIMITED` → `RATE_LIMITED`,
+  `ERR_INTERNAL_ERROR` → `INTERNAL_ERROR`,
+  `ERR_POLICY_DENIED` → `POLICY_DENIED`,
+  `ERR_INVALID_SESSION_ID` → `INVALID_SESSION_ID`,
+  `ERR_UNKNOWN_POLICY_VERSION` → `UNKNOWN_POLICY_VERSION`,
+  `ERR_INVALID_POLICY_DEFINITION` → `INVALID_POLICY_DEFINITION`.
+- `MacpClient.clientVersion` default now `0.3.0`.
+
+### Removed
+
+- **`HandoffSession.sendContext()`** (Gap A, breaking): the deprecated
+  alias (warning first emitted in 0.2.3) has been removed. Use
+  `HandoffSession.addContext()`.
+- **`MacpAckError.reasons` getter** (breaking): use
+  `MacpAckError.failure.reasons` instead. `.failure` is the canonical
+  structured NACK record and matches `macp-sdk-python`'s
+  `MacpAckError.failure`.
+- **Mode-prefixed policy rule type aliases** (breaking): the
+  `CommitmentRulesInput`, `DecisionVotingRules`,
+  `DecisionObjectionHandling`, `DecisionEvaluationRules`, and
+  `DecisionCommitmentRules` type aliases have been removed. Use the
+  unprefixed names (`CommitmentRules`, `VotingRules`,
+  `ObjectionHandlingRules`, `EvaluationRules`) introduced in Gap K.
+
+## [0.2.3] - 2026-04-21
 
 ### Added
 - `MacpStream.sendSubscribe(sessionId, afterSequence?)` — subscribe-only stream
@@ -19,6 +108,19 @@ project uses [Semantic Versioning](https://semver.org/).
   pass-through to `openStream`).
 - Integration tests for late-subscriber replay and future-cursor skip
   (`tests/integration/runtime.test.ts`).
+- `InitiatorConfig.sessionStart` now accepts `contextId` and `extensions`, and
+  `Participant.emitInitiatorEnvelopes()` forwards both to the mode-session
+  `start()` call (SDK-TS-1). `fromBootstrap()` decodes `context_id` plus a
+  JSON-native `extensions` map from the bootstrap file — each value is
+  serialised as UTF-8 JSON into the `Record<string, Buffer>` shape the
+  envelope requires; pre-encoded `Buffer` / `Uint8Array` values pass through
+  unchanged.
+- Documented `MacpClient.listSessions()` (parity with the python-sdk SDK-PY-2
+  gap) and `SessionLifecycleWatcher` (parity with python-sdk SDK-PY-3). Both
+  were already implemented — this release adds the API reference, a
+  `docs/guides/streaming.md` section, unit coverage for `listSessions`, and
+  integration tests that exercise enumeration + a `CREATED` lifecycle event
+  round-trip against a live runtime.
 - Warn-once migration hint when the deprecated `HandoffSession.sendContext()`
   alias is invoked. Scheduled for removal in `0.4.0`; use `addContext()`.
 - `docs/api/sessions.md` now documents the identity-guard contract.

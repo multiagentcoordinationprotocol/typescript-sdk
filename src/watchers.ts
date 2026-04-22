@@ -1,6 +1,7 @@
 import type * as grpc from '@grpc/grpc-js';
 import type { AuthConfig } from './auth';
 import type { MacpClient } from './client';
+import { logger } from './logging';
 import type { Envelope, PolicyDescriptor, RegistryChanged, RootsChanged, SessionLifecycleEvent } from './types';
 
 function serverStreamToAsyncGenerator<T>(stream: grpc.ClientReadableStream<T>): AsyncGenerator<T, void, void> {
@@ -196,13 +197,15 @@ export class PolicyWatcher {
 export class SessionLifecycleWatcher {
   private readonly client: MacpClient;
   private readonly auth?: AuthConfig;
+  private deprecatedEventsWarned = false;
+  private deprecatedNextEventWarned = false;
 
   constructor(client: MacpClient, options?: { auth?: AuthConfig }) {
     this.client = client;
     this.auth = options?.auth;
   }
 
-  async *events(signal?: AbortSignal): AsyncGenerator<SessionLifecycleEvent, void, void> {
+  async *changes(signal?: AbortSignal): AsyncGenerator<SessionLifecycleEvent, void, void> {
     const stream = this.client.watchSessions(this.auth) as grpc.ClientReadableStream<{ event?: SessionLifecycleEvent }>;
     if (signal) {
       signal.addEventListener('abort', () => stream.cancel(), { once: true });
@@ -214,16 +217,40 @@ export class SessionLifecycleWatcher {
   }
 
   async watch(handler: (event: SessionLifecycleEvent) => void | Promise<void>): Promise<void> {
-    for await (const event of this.events()) {
+    for await (const event of this.changes()) {
       await handler(event);
     }
   }
 
-  async nextEvent(): Promise<SessionLifecycleEvent> {
-    const gen = this.events();
+  async nextChange(): Promise<SessionLifecycleEvent> {
+    const gen = this.changes();
     const result = await gen.next();
     await gen.return(undefined as never);
     if (result.done) throw new Error('stream ended before receiving a session lifecycle event');
     return result.value;
+  }
+
+  /**
+   * @deprecated Use {@link changes} — renamed for parity with python-sdk's
+   * `SessionLifecycleWatcher.changes()` and the uniform `changes()` name
+   * used by all other watchers in both SDKs. Will be removed in 0.5.0.
+   */
+  async *events(signal?: AbortSignal): AsyncGenerator<SessionLifecycleEvent, void, void> {
+    if (!this.deprecatedEventsWarned) {
+      this.deprecatedEventsWarned = true;
+      logger.warn('[deprecated] SessionLifecycleWatcher.events() — use changes() instead');
+    }
+    yield* this.changes(signal);
+  }
+
+  /**
+   * @deprecated Use {@link nextChange}. Will be removed in 0.5.0.
+   */
+  async nextEvent(): Promise<SessionLifecycleEvent> {
+    if (!this.deprecatedNextEventWarned) {
+      this.deprecatedNextEventWarned = true;
+      logger.warn('[deprecated] SessionLifecycleWatcher.nextEvent() — use nextChange() instead');
+    }
+    return this.nextChange();
   }
 }

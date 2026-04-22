@@ -25,7 +25,7 @@ async function main(): Promise<void> {
     reason: 'moving to backend team',
   });
 
-  await session.sendContext({
+  await session.addContext({
     handoffId: 'h1',
     contentType: 'application/json',
     context: Buffer.from(JSON.stringify({ repo: 'acme/web', docs: 'wiki/frontend' })),

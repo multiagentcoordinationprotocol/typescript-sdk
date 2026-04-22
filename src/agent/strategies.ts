@@ -68,6 +68,13 @@ export function votingHandler(strategy: VotingStrategy): MessageHandler {
   };
 }
 
+export function functionVoter(
+  shouldVote: (projection: DecisionProjection) => boolean,
+  decideVote: (projection: DecisionProjection) => Promise<VoteResult>,
+): VotingStrategy {
+  return { shouldVote, decideVote };
+}
+
 export function majorityVoter(options?: { positiveThreshold?: number }): VotingStrategy {
   const threshold = options?.positiveThreshold ?? 0.5;
   return {
@@ -121,6 +128,13 @@ export function commitmentHandler(strategy: CommitmentStrategy): MessageHandler 
       });
     }
   };
+}
+
+export function functionCommitter(
+  shouldCommit: (projection: DecisionProjection) => boolean,
+  decideCommitment: (projection: DecisionProjection) => Promise<CommitmentResult>,
+): CommitmentStrategy {
+  return { shouldCommit, decideCommitment };
 }
 
 export function majorityCommitter(options?: {
