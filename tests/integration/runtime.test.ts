@@ -263,7 +263,7 @@ describe('Task mode — happy path', () => {
     });
     expect(startAck.ok).toBe(true);
 
-    const reqAck = await session.request({
+    const reqAck = await session.requestTask({
       taskId: 't1',
       title: 'Review PR #42',
       instructions: 'Check for security issues',
@@ -284,7 +284,7 @@ describe('Task mode — happy path', () => {
   });
 
   it('updates progress', async () => {
-    const ack = await session.update({
+    const ack = await session.updateTask({
       taskId: 't1',
       status: 'in_progress',
       progress: 0.5,
@@ -296,7 +296,7 @@ describe('Task mode — happy path', () => {
   });
 
   it('completes the task', async () => {
-    const ack = await session.complete({
+    const ack = await session.completeTask({
       taskId: 't1',
       assignee: 'bob',
       output: Buffer.from('No issues found'),
@@ -331,7 +331,7 @@ describe('Task mode — reject path', () => {
       sender: 'alice',
     });
 
-    await session.request({
+    await session.requestTask({
       taskId: 'tr1',
       title: 'Fix prod bug',
       instructions: 'Investigate crash',
@@ -363,7 +363,7 @@ describe('Task mode — fail path', () => {
       sender: 'alice',
     });
 
-    await session.request({
+    await session.requestTask({
       taskId: 'tf1',
       title: 'Deploy v2',
       instructions: 'Deploy to staging',
@@ -373,7 +373,7 @@ describe('Task mode — fail path', () => {
 
     await session.acceptTask({ taskId: 'tf1', assignee: 'bob', sender: 'bob', auth: agentBob });
 
-    const ack = await session.fail({
+    const ack = await session.failTask({
       taskId: 'tf1',
       assignee: 'bob',
       reason: 'Staging down',
@@ -861,7 +861,7 @@ describe.skipIf(!SDKTS1_ALICE)('Session enumeration + lifecycle watch', () => {
 
       const consumer = (async () => {
         try {
-          for await (const event of watcher.events(controller.signal)) {
+          for await (const event of watcher.changes(controller.signal)) {
             if (event.session?.sessionId === session.sessionId) {
               seenSessionIds.add(event.session.sessionId);
               seenEventType = String(event.eventType);

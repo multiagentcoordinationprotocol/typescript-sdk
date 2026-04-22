@@ -132,13 +132,13 @@ describe('Identity guard — mode helpers', () => {
     );
   });
 
-  it('TaskSession.request enforces the guard', async () => {
+  it('TaskSession.requestTask enforces the guard', async () => {
     const client = makeClient();
     const session = new TaskSession(client);
     vi.spyOn(client, 'send').mockResolvedValue({ ok: true });
 
     await expect(
-      session.request({
+      session.requestTask({
         taskId: 't1',
         title: 'Review',
         instructions: 'something',

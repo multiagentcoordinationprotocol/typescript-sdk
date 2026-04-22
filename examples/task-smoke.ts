@@ -18,7 +18,7 @@ async function main(): Promise<void> {
     ttlMs: 120_000,
   });
 
-  await session.request({
+  await session.requestTask({
     taskId: 't1',
     title: 'Implement login page',
     instructions: 'Build a login form with email and password fields',
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
     auth: Auth.devAgent('worker'),
   });
 
-  await session.update({
+  await session.updateTask({
     taskId: 't1',
     status: 'working',
     progress: 0.5,
@@ -44,7 +44,7 @@ async function main(): Promise<void> {
 
   console.log('progress', session.projection.progressOf('t1'));
 
-  await session.complete({
+  await session.completeTask({
     taskId: 't1',
     assignee: 'worker',
     summary: 'login page with validation',

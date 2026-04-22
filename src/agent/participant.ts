@@ -8,11 +8,13 @@ import { DecisionProjection } from '../projections/decision';
 import { ProposalSession } from '../proposal';
 import { QuorumSession } from '../quorum';
 import { TaskSession } from '../task';
+import type { Envelope } from '../types';
 import { startCancelCallbackServer, type CancelCallbackServer } from './cancel-callback';
 import { Dispatcher } from './dispatcher';
 import { GrpcTransportAdapter, type TransportAdapter } from './transports';
 import type {
   HandlerContext,
+  IncomingMessage,
   MessageHandler,
   PhaseChangeHandler,
   ProjectionLike,
@@ -21,6 +23,8 @@ import type {
   TerminalHandler,
   TerminalResult,
 } from './types';
+
+const TERMINAL_PHASES = new Set(['Committed', 'Accepted', 'Declined', 'Cancelled', 'TerminalRejected']);
 
 export interface InitiatorConfig {
   sessionStart: {
@@ -245,6 +249,11 @@ export class Participant {
     return this;
   }
 
+  /** Whether {@link stop} has been called (or the loop has exited). */
+  get isStopped(): boolean {
+    return !this.running;
+  }
+
   async run(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -264,6 +273,39 @@ export class Participant {
       await this.emitInitiatorEnvelopes();
     }
 
+    try {
+      for await (const message of this.transport.start()) {
+        if (!this.running) break;
+        const reachedTerminal = await this.processMessage(message);
+        if (reachedTerminal) break;
+      }
+    } finally {
+      this.running = false;
+    }
+  }
+
+  /**
+   * Manually process a single envelope. Parity with python-sdk's
+   * {@code Participant.process_event}. Useful for deterministic unit tests
+   * and for driving the participant from a foreign event loop without
+   * installing a {@link TransportAdapter}.
+   */
+  async processEvent(envelope: Envelope): Promise<void> {
+    const payload =
+      this.client.protoRegistry.decodeKnownPayload(envelope.mode, envelope.messageType, envelope.payload) ?? {};
+    const message: IncomingMessage = {
+      messageType: envelope.messageType,
+      sender: envelope.sender,
+      payload,
+      proposalId:
+        (payload as Record<string, string>).proposalId ?? (payload as Record<string, string>).proposal_id,
+      raw: envelope,
+      seq: 0,
+    };
+    await this.processMessage(message);
+  }
+
+  private buildHandlerContext(): HandlerContext {
     const sessionInfo: SessionInfo = {
       sessionId: this.sessionId,
       mode: this.mode,
@@ -272,63 +314,51 @@ export class Participant {
       configurationVersion: this.configurationVersion,
       policyVersion: this.policyVersion,
     };
+    return {
+      participant: this,
+      projection: this.projection,
+      actions: this.actions,
+      session: sessionInfo,
+      log: (msg: string, details?: Record<string, unknown>) => {
+        logger.debug(`[${this.participantId}] ${msg}`, details ?? '');
+      },
+    };
+  }
 
-    try {
-      for await (const message of this.transport.start()) {
-        if (!this.running) break;
+  /** Returns true if a terminal state was reached. */
+  private async processMessage(message: IncomingMessage): Promise<boolean> {
+    const ctx = this.buildHandlerContext();
 
-        const ctx: HandlerContext = {
-          participant: this,
-          projection: this.projection,
-          actions: this.actions,
-          session: sessionInfo,
-          log: (msg: string, details?: Record<string, unknown>) => {
-            logger.debug(`[${this.participantId}] ${msg}`, details ?? '');
-          },
-        };
-
-        // Apply envelope to projection if we have a mode session
-        if (this.session && message.raw) {
-          const applyMethod = (this.session as { projection: { applyEnvelope: (...args: unknown[]) => void } })
-            .projection.applyEnvelope;
-          if (typeof applyMethod === 'function') {
-            applyMethod.call(
-              (this.session as { projection: ProjectionLike }).projection,
-              message.raw,
-              this.client.protoRegistry,
-            );
-          }
-        }
-
-        // Dispatch message
-        await this.dispatcher.dispatch(message, ctx);
-
-        // Check for phase change
-        const currentPhase = this.projection.phase;
-        if (currentPhase !== this.lastPhase) {
-          this.lastPhase = currentPhase;
-          await this.dispatcher.dispatchPhaseChange(currentPhase, ctx);
-
-          // Check for terminal state
-          if (
-            currentPhase === 'Committed' ||
-            currentPhase === 'Accepted' ||
-            currentPhase === 'Declined' ||
-            currentPhase === 'Cancelled' ||
-            currentPhase === 'TerminalRejected'
-          ) {
-            const terminalResult: TerminalResult = {
-              state: currentPhase,
-              commitment: (this.projection as { commitment?: Record<string, unknown> }).commitment,
-            };
-            await this.dispatcher.dispatchTerminal(terminalResult);
-            break;
-          }
-        }
+    if (this.session && message.raw) {
+      const applyMethod = (this.session as { projection: { applyEnvelope: (...args: unknown[]) => void } })
+        .projection.applyEnvelope;
+      if (typeof applyMethod === 'function') {
+        applyMethod.call(
+          (this.session as { projection: ProjectionLike }).projection,
+          message.raw,
+          this.client.protoRegistry,
+        );
       }
-    } finally {
-      this.running = false;
     }
+
+    await this.dispatcher.dispatch(message, ctx);
+
+    const currentPhase = this.projection.phase;
+    if (currentPhase !== this.lastPhase) {
+      this.lastPhase = currentPhase;
+      await this.dispatcher.dispatchPhaseChange(currentPhase, ctx);
+
+      if (TERMINAL_PHASES.has(currentPhase)) {
+        const terminalResult: TerminalResult = {
+          state: currentPhase,
+          commitment: (this.projection as { commitment?: Record<string, unknown> }).commitment,
+        };
+        await this.dispatcher.dispatchTerminal(terminalResult);
+        return true;
+      }
+    }
+
+    return false;
   }
 
   async stop(): Promise<void> {

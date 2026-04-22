@@ -135,4 +135,13 @@ describe('DEFAULT_RETRY_POLICY', () => {
     expect(DEFAULT_RETRY_POLICY.retryableCodes).toContain('RATE_LIMITED');
     expect(DEFAULT_RETRY_POLICY.retryableCodes).toContain('INTERNAL_ERROR');
   });
+
+  // Cross-SDK parity: the retryable set must match exactly between TypeScript
+  // and Python (python-sdk/src/macp_sdk/retry.py). FORBIDDEN, UNAUTHENTICATED,
+  // and POLICY_DENIED must NOT be retryable — a well-meaning contributor
+  // adding one of these on one side would desync the SDKs.
+  it('retryableCodes matches exactly {RATE_LIMITED, INTERNAL_ERROR}', () => {
+    const codes = [...DEFAULT_RETRY_POLICY.retryableCodes].sort();
+    expect(codes).toEqual(['INTERNAL_ERROR', 'RATE_LIMITED']);
+  });
 });
