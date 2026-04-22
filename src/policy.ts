@@ -62,19 +62,6 @@ export interface HandoffAcceptanceRules {
   implicitAcceptTimeoutMs?: number;
 }
 
-// ── Deprecated mode-prefixed aliases (kept for back-compat) ───────
-
-/** @deprecated Use {@link CommitmentRules}. */
-export type CommitmentRulesInput = CommitmentRules;
-/** @deprecated Use {@link VotingRules}. */
-export type DecisionVotingRules = VotingRules;
-/** @deprecated Use {@link ObjectionHandlingRules}. */
-export type DecisionObjectionHandling = ObjectionHandlingRules;
-/** @deprecated Use {@link EvaluationRules}. */
-export type DecisionEvaluationRules = EvaluationRules;
-/** @deprecated Use {@link CommitmentRules}. */
-export type DecisionCommitmentRules = CommitmentRules;
-
 // ── Composite rule-input types per mode ──────────────────────────
 
 export interface DecisionPolicyRulesInput {

@@ -78,14 +78,14 @@ describe('Error classes', () => {
     expect(err.message).toContain('mallory');
   });
 
-  describe('MacpAckError.reasons', () => {
+  describe('MacpAckError.failure.reasons', () => {
     it('parses reasons from details buffer', () => {
       const details = Buffer.from(JSON.stringify({ reasons: ['policy mismatch', 'missing field'] }));
       const err = new MacpAckError({
         ok: false,
         error: { code: 'POLICY_DENIED', message: 'denied', details },
       });
-      expect(err.reasons).toEqual(['policy mismatch', 'missing field']);
+      expect(err.failure.reasons).toEqual(['policy mismatch', 'missing field']);
     });
 
     it('returns empty array when no details', () => {
@@ -93,7 +93,7 @@ describe('Error classes', () => {
         ok: false,
         error: { code: 'POLICY_DENIED', message: 'denied' },
       });
-      expect(err.reasons).toEqual([]);
+      expect(err.failure.reasons).toEqual([]);
     });
 
     it('returns empty array on malformed JSON', () => {
@@ -101,7 +101,7 @@ describe('Error classes', () => {
         ok: false,
         error: { code: 'POLICY_DENIED', message: 'denied', details: Buffer.from('not json') },
       });
-      expect(err.reasons).toEqual([]);
+      expect(err.failure.reasons).toEqual([]);
     });
 
     it('returns empty array when reasons is not an array', () => {
@@ -110,7 +110,7 @@ describe('Error classes', () => {
         ok: false,
         error: { code: 'POLICY_DENIED', message: 'denied', details },
       });
-      expect(err.reasons).toEqual([]);
+      expect(err.failure.reasons).toEqual([]);
     });
   });
 
@@ -138,7 +138,6 @@ describe('Error classes', () => {
         [{ key: 'macp-error-details-bin', value: trailing }],
       );
       expect(err.failure.reasons).toEqual(['tenant mismatch']);
-      expect(err.reasons).toEqual(err.failure.reasons);
     });
 
     it('defaults code/message to sentinels when ack.error absent', () => {

@@ -38,8 +38,7 @@ Parity release — brings TypeScript SDK to full feature parity with
   `src/handoff.ts` now route through the structured logger.
 - **`AckFailure` shape** (Gap I): structured NACK record exported from
   `src/errors.ts`. Populated on `MacpAckError.failure` from both
-  `ack.error.details` and gRPC trailing metadata. `.reasons` is now a
-  thin alias for `failure.reasons`.
+  `ack.error.details` and gRPC trailing metadata.
 - **`BaseSession` / `BaseProjection`** (Gap J): abstract extension
   points exported from `src/base-session.ts` and `src/projections/base.ts`
   for custom mode helpers (modes registered via `registerExtMode`).
@@ -49,9 +48,7 @@ Parity release — brings TypeScript SDK to full feature parity with
   `QuorumThreshold`, `AbstentionRules`, `ProposalAcceptanceRules`,
   `CounterProposalRules`, `RejectionRules`, `TaskAssignmentRules`,
   `TaskCompletionRules`, `HandoffAcceptanceRules` now exported as
-  first-class interfaces matching `macp-sdk-python` exports. Old
-  mode-prefixed names (`DecisionVotingRules`, etc.) remain as
-  deprecated type aliases for back-compat.
+  first-class interfaces matching `macp-sdk-python` exports.
 - **`STANDARD_MODES` tuple** (Gap L) in `src/constants.ts`.
 - **Parity examples** (Gap M): `examples/policy-registration.ts`,
   `examples/agent-policy-aware.ts`, `examples/direct-agent-auth-initiator.ts`,
@@ -85,6 +82,16 @@ Parity release — brings TypeScript SDK to full feature parity with
 - **`HandoffSession.sendContext()`** (Gap A, breaking): the deprecated
   alias (warning first emitted in 0.2.3) has been removed. Use
   `HandoffSession.addContext()`.
+- **`MacpAckError.reasons` getter** (breaking): use
+  `MacpAckError.failure.reasons` instead. `.failure` is the canonical
+  structured NACK record and matches `macp-sdk-python`'s
+  `MacpAckError.failure`.
+- **Mode-prefixed policy rule type aliases** (breaking): the
+  `CommitmentRulesInput`, `DecisionVotingRules`,
+  `DecisionObjectionHandling`, `DecisionEvaluationRules`, and
+  `DecisionCommitmentRules` type aliases have been removed. Use the
+  unprefixed names (`CommitmentRules`, `VotingRules`,
+  `ObjectionHandlingRules`, `EvaluationRules`) introduced in Gap K.
 
 ## [0.2.3] - 2026-04-21
 

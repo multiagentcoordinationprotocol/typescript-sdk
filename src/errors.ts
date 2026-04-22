@@ -49,11 +49,6 @@ export class MacpAckError extends MacpSdkError {
     };
   }
 
-  /** Back-compat alias for {@link AckFailure.reasons}. */
-  get reasons(): string[] {
-    return this.failure.reasons;
-  }
-
   private static _extractReasons(
     ack: Ack,
     grpcMetadata?: Array<{ key: string; value: string | Buffer }>,
