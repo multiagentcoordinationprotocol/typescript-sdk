@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { Participant, type ParticipantConfig, type InitiatorConfig } from '../../../src/agent/participant';
 import type { TransportAdapter } from '../../../src/agent/transports';
 import type { IncomingMessage } from '../../../src/agent/types';
 import { MODE_DECISION, MODE_PROPOSAL, MODE_TASK, MODE_HANDOFF, MODE_QUORUM } from '../../../src/constants';
+import { DecisionSession } from '../../../src/decision';
 import type { Envelope } from '../../../src/types';
 
 function makeMockClient(): any {
@@ -233,6 +234,40 @@ describe('Participant', () => {
       );
     });
 
+    it('propagates participants and version config into SessionInfo', async () => {
+      const client = makeMockClient();
+      const handler = vi.fn();
+
+      const messages = [makeIncomingMessage('Proposal', { proposalId: 'p1', option: 'opt-a' })];
+      const transport = makeMockTransport(messages);
+
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+        mode: MODE_DECISION,
+        client,
+        transport,
+        participants: ['agent-1', 'agent-2', 'agent-3'],
+        modeVersion: '1.2.0',
+        configurationVersion: 'config.strict',
+        policyVersion: 'policy.strict',
+      });
+
+      participant.on('Proposal', handler);
+      await participant.run();
+
+      expect(handler).toHaveBeenCalledOnce();
+      const ctx = handler.mock.calls[0][1];
+      expect(ctx.session).toEqual({
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+        mode: MODE_DECISION,
+        participants: ['agent-1', 'agent-2', 'agent-3'],
+        modeVersion: '1.2.0',
+        configurationVersion: 'config.strict',
+        policyVersion: 'policy.strict',
+      });
+    });
+
     it('processes multiple messages', async () => {
       const client = makeMockClient();
       const proposalHandler = vi.fn();
@@ -372,6 +407,96 @@ describe('Participant', () => {
         transport: makeMockTransport([]),
       });
       expect(participant.actions.send).toBeDefined();
+    });
+  });
+
+  // ── emitInitiatorEnvelopes: SDK-TS-1 ─────────────────────────────
+  //
+  // The initiator path compiles `InitiatorConfig.sessionStart` into the
+  // actual `DecisionSession.start(...)` call. Dropping `contextId` /
+  // `extensions` here means the runtime never learns about upstream context
+  // or extension metadata — which was the bug the control-plane projection
+  // work (CP-16/17/18) is depending on. These tests pin the wiring.
+  describe('emitInitiatorEnvelopes (initiator wiring)', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('forwards contextId and extensions to the mode session start', async () => {
+      const client = makeMockClient();
+      const startSpy = vi
+        .spyOn(DecisionSession.prototype, 'start')
+        .mockResolvedValue({ ok: true, envelopeId: 'env-1' } as any);
+
+      const initiator: InitiatorConfig = {
+        sessionStart: {
+          intent: 'decide rollout',
+          participants: ['agent-1', 'agent-2'],
+          ttlMs: 30_000,
+          contextId: 'ctx-parent-run-42',
+          extensions: {
+            'aitp.tct': Buffer.from('{"token":"t-1"}', 'utf8'),
+          },
+          roots: [{ uri: 'file:///workspace' }],
+        },
+      };
+
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+        initiator,
+      });
+
+      await participant.run();
+
+      expect(startSpy).toHaveBeenCalledTimes(1);
+      const arg = startSpy.mock.calls[0]![0];
+      expect(arg).toMatchObject({
+        intent: 'decide rollout',
+        participants: ['agent-1', 'agent-2'],
+        ttlMs: 30_000,
+        contextId: 'ctx-parent-run-42',
+        roots: [{ uri: 'file:///workspace' }],
+      });
+      expect(arg.extensions).toBeDefined();
+      expect(arg.extensions!['aitp.tct']).toBeInstanceOf(Buffer);
+      expect(arg.extensions!['aitp.tct']!.toString('utf8')).toBe('{"token":"t-1"}');
+    });
+
+    it('omits contextId and extensions when initiator does not supply them (backwards-compatible)', async () => {
+      // Guards against accidentally requiring the fields or defaulting them
+      // to empty values that the runtime would reject.
+      const client = makeMockClient();
+      const startSpy = vi
+        .spyOn(DecisionSession.prototype, 'start')
+        .mockResolvedValue({ ok: true, envelopeId: 'env-1' } as any);
+
+      const initiator: InitiatorConfig = {
+        sessionStart: {
+          intent: 'no context here',
+          participants: ['agent-1'],
+          ttlMs: 10_000,
+        },
+      };
+
+      const participant = new Participant({
+        participantId: 'agent-1',
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+        mode: MODE_DECISION,
+        client,
+        transport: makeMockTransport([]),
+        initiator,
+      });
+
+      await participant.run();
+
+      expect(startSpy).toHaveBeenCalledTimes(1);
+      const arg = startSpy.mock.calls[0]![0];
+      expect(arg.contextId).toBeUndefined();
+      expect(arg.extensions).toBeUndefined();
     });
   });
 });

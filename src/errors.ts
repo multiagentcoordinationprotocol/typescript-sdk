@@ -14,32 +14,61 @@ export class MacpTransportError extends MacpSdkError {
   }
 }
 
+/**
+ * Structured NACK record. Mirrors python-sdk's `AckFailure` dataclass so
+ * cross-SDK code can share the same shape when logging or persisting a
+ * rejected message.
+ */
+export interface AckFailure {
+  code: string;
+  message: string;
+  sessionId: string;
+  messageId: string;
+  reasons: string[];
+}
+
 export class MacpAckError extends MacpSdkError {
   readonly ack: Ack;
   /** Optional gRPC trailing metadata for extracting additional error details. */
   readonly grpcMetadata?: Array<{ key: string; value: string | Buffer }>;
+  /** Structured NACK record — parity with python-sdk `MacpAckError.failure`. */
+  readonly failure: AckFailure;
 
   constructor(ack: Ack, grpcMetadata?: Array<{ key: string; value: string | Buffer }>) {
     super(`${ack.error?.code ?? 'UNKNOWN'}: ${ack.error?.message ?? 'runtime returned nack'}`);
     this.name = 'MacpAckError';
     this.ack = ack;
     this.grpcMetadata = grpcMetadata;
+    const reasons = MacpAckError._extractReasons(ack, grpcMetadata);
+    this.failure = {
+      code: ack.error?.code ?? 'UNKNOWN',
+      message: ack.error?.message ?? 'runtime returned nack',
+      sessionId: ack.sessionId ?? ack.error?.sessionId ?? '',
+      messageId: ack.messageId ?? ack.error?.messageId ?? '',
+      reasons,
+    };
   }
 
-  /** Extract structured denial reasons from the ACK error details and/or gRPC trailing metadata. */
+  /** Back-compat alias for {@link AckFailure.reasons}. */
   get reasons(): string[] {
-    // First try: parse from ack.error.details (matches Python _parse_ack_reasons)
-    const fromDetails = this._parseAckReasons();
-    if (fromDetails.length > 0) return fromDetails;
-
-    // Second try: parse from gRPC trailing metadata (matches Python _parse_grpc_metadata_reasons)
-    return this._parseGrpcMetadataReasons();
+    return this.failure.reasons;
   }
 
-  private _parseAckReasons(): string[] {
-    if (!this.ack.error?.details) return [];
+  private static _extractReasons(
+    ack: Ack,
+    grpcMetadata?: Array<{ key: string; value: string | Buffer }>,
+  ): string[] {
+    // First try: parse from ack.error.details (matches Python _parse_ack_reasons)
+    const fromDetails = MacpAckError._parseAckReasons(ack);
+    if (fromDetails.length > 0) return fromDetails;
+    // Second try: parse from gRPC trailing metadata (matches Python _parse_grpc_metadata_reasons)
+    return MacpAckError._parseGrpcMetadataReasons(grpcMetadata);
+  }
+
+  private static _parseAckReasons(ack: Ack): string[] {
+    if (!ack.error?.details) return [];
     try {
-      const details = this.ack.error.details;
+      const details = ack.error.details;
       const raw = Buffer.isBuffer(details) ? details.toString('utf-8') : String(details);
       const parsed = JSON.parse(raw);
       const reasons = parsed.reasons;
@@ -49,10 +78,12 @@ export class MacpAckError extends MacpSdkError {
     }
   }
 
-  private _parseGrpcMetadataReasons(): string[] {
-    if (!this.grpcMetadata) return [];
+  private static _parseGrpcMetadataReasons(
+    grpcMetadata?: Array<{ key: string; value: string | Buffer }>,
+  ): string[] {
+    if (!grpcMetadata) return [];
     try {
-      for (const item of this.grpcMetadata) {
+      for (const item of grpcMetadata) {
         if (item.key === 'macp-error-details-bin') {
           const data = Buffer.isBuffer(item.value)
             ? item.value.toString('utf-8')

@@ -20,16 +20,6 @@ import type {
   SessionMetadata,
 } from './types';
 
-let sendContextWarned = false;
-function warnSendContextOnce(): void {
-  if (sendContextWarned) return;
-  sendContextWarned = true;
-  // eslint-disable-next-line no-console
-  console.warn(
-    '[macp-sdk-typescript] HandoffSession.sendContext() is deprecated and will be removed in 0.4.0. Use addContext() instead.',
-  );
-}
-
 interface HandoffSessionOptions {
   sessionId?: string;
   modeVersion?: string;
@@ -130,15 +120,6 @@ export class HandoffSession {
       payload: this.client.protoRegistry.encodeKnownPayload(MODE_HANDOFF, 'HandoffContext', toProtoPayload(input)),
     });
     return this.sendAndTrack(envelope, input.auth);
-  }
-
-  /**
-   * @deprecated Use {@link addContext} instead. Scheduled for removal in 0.4.0.
-   * First call logs a one-shot warning to guide migrations without spamming long-lived processes.
-   */
-  async sendContext(input: HandoffContextPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {
-    warnSendContextOnce();
-    return this.addContext(input);
   }
 
   async acceptHandoff(input: HandoffAcceptPayload & { sender?: string; auth?: AuthConfig }): Promise<Ack> {

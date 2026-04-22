@@ -28,6 +28,15 @@ export interface BootstrapPayload {
       configuration_version?: string;
       policy_version?: string;
       context?: Record<string, unknown>;
+      // RFC-MACP-0007 context propagation: identifier linking this session
+      // to an upstream context (e.g. parent run / scenario). Empty / omitted
+      // means "no upstream context".
+      context_id?: string;
+      // Extension metadata map (RFC-MACP-0008). Values arrive as arbitrary
+      // JSON-serialisable structures in the bootstrap file — the runner
+      // serialises each one to UTF-8 JSON bytes before handing it to the
+      // mode `start()`, since the envelope carries `Record<string, Buffer>`.
+      extensions?: Record<string, unknown>;
       roots?: Array<{ uri: string; name?: string }>;
     };
     kickoff?: {
@@ -37,6 +46,13 @@ export interface BootstrapPayload {
     };
   };
   metadata?: Record<string, unknown>;
+  /**
+   * Bind a cancel-callback HTTP endpoint (RFC-0001 §7.2 Option A). The
+   * orchestrator POSTs `{runId, reason}` to `http://host:port{path}` to
+   * request a clean shutdown. The runner starts the endpoint before
+   * entering the event loop and closes it when the participant stops.
+   */
+  cancel_callback?: { host: string; port: number; path: string };
 }
 
 export function fromBootstrap(bootstrapPath?: string): Participant {
@@ -82,6 +98,8 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
         intent: ss.intent,
         participants: ss.participants,
         ttlMs: ss.ttl_ms,
+        contextId: ss.context_id,
+        extensions: encodeExtensions(ss.extensions),
         roots: ss.roots,
       },
       kickoff: payload.initiator.kickoff
@@ -104,7 +122,37 @@ export function fromBootstrap(bootstrapPath?: string): Participant {
     configurationVersion: payload.configuration_version,
     policyVersion: payload.policy_version ?? DEFAULT_POLICY_VERSION,
     initiator,
+    cancelCallback: payload.cancel_callback
+      ? {
+          host: payload.cancel_callback.host,
+          port: payload.cancel_callback.port,
+          path: payload.cancel_callback.path,
+        }
+      : undefined,
   };
 
   return new Participant(config);
+}
+
+/**
+ * Serialise a JSON-native extensions map (as delivered in the bootstrap
+ * payload) into the `Record<string, Buffer>` form the SessionStart envelope
+ * expects. Each value is encoded as UTF-8 JSON so arbitrary structures
+ * round-trip through the protobuf `bytes` field. `Buffer` / `Uint8Array`
+ * values are passed through untouched so callers that already hold raw bytes
+ * don't pay a double-encode.
+ */
+function encodeExtensions(extensions: Record<string, unknown> | undefined): Record<string, Buffer> | undefined {
+  if (!extensions) return undefined;
+  const out: Record<string, Buffer> = {};
+  for (const [key, value] of Object.entries(extensions)) {
+    if (Buffer.isBuffer(value)) {
+      out[key] = value;
+    } else if (value instanceof Uint8Array) {
+      out[key] = Buffer.from(value);
+    } else {
+      out[key] = Buffer.from(JSON.stringify(value), 'utf8');
+    }
+  }
+  return out;
 }

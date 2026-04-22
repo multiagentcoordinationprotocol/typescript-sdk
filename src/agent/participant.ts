@@ -3,10 +3,12 @@ import type { MacpClient } from '../client';
 import { MODE_DECISION, MODE_HANDOFF, MODE_PROPOSAL, MODE_QUORUM, MODE_TASK } from '../constants';
 import { DecisionSession } from '../decision';
 import { HandoffSession } from '../handoff';
+import { logger } from '../logging';
 import { DecisionProjection } from '../projections/decision';
 import { ProposalSession } from '../proposal';
 import { QuorumSession } from '../quorum';
 import { TaskSession } from '../task';
+import { startCancelCallbackServer, type CancelCallbackServer } from './cancel-callback';
 import { Dispatcher } from './dispatcher';
 import { GrpcTransportAdapter, type TransportAdapter } from './transports';
 import type {
@@ -25,6 +27,8 @@ export interface InitiatorConfig {
     intent: string;
     participants: string[];
     ttlMs: number;
+    contextId?: string;
+    extensions?: Record<string, Buffer>;
     context?: Record<string, unknown>;
     roots?: Array<{ uri: string; name?: string }>;
   };
@@ -46,6 +50,13 @@ export interface ParticipantConfig {
   policyVersion?: string;
   transport?: TransportAdapter;
   initiator?: InitiatorConfig;
+  /**
+   * Bind a cancel-callback HTTP endpoint (RFC-0001 §7.2 Option A) when
+   * this participant's event loop starts. The server is closed
+   * automatically when {@link Participant.stop} is called. Parity with
+   * python-sdk's bootstrap `cancel_callback` field.
+   */
+  cancelCallback?: { host: string; port: number; path: string };
 }
 
 type ModeSession = DecisionSession | ProposalSession | TaskSession | HandoffSession | QuorumSession;
@@ -63,8 +74,14 @@ export class Participant {
   private readonly session: ModeSession | null;
   private readonly transport: TransportAdapter;
   private readonly initiatorConfig?: InitiatorConfig;
+  private readonly participants: string[];
+  private readonly modeVersion?: string;
+  private readonly configurationVersion?: string;
+  private readonly policyVersion?: string;
   private running = false;
   private lastPhase: string;
+  private cancelCallbackServer?: CancelCallbackServer;
+  private readonly cancelCallbackConfig?: { host: string; port: number; path: string };
 
   constructor(config: ParticipantConfig) {
     this.participantId = config.participantId;
@@ -89,6 +106,11 @@ export class Participant {
     this.actions = this.buildActions();
     this.transport = config.transport ?? new GrpcTransportAdapter(config.client, config.sessionId, config.auth);
     this.initiatorConfig = config.initiator;
+    this.participants = config.participants ?? [];
+    this.modeVersion = config.modeVersion;
+    this.configurationVersion = config.configurationVersion;
+    this.policyVersion = config.policyVersion;
+    this.cancelCallbackConfig = config.cancelCallback;
   }
 
   private createModeSession(
@@ -227,6 +249,17 @@ export class Participant {
     if (this.running) return;
     this.running = true;
 
+    if (this.cancelCallbackConfig && !this.cancelCallbackServer) {
+      this.cancelCallbackServer = await startCancelCallbackServer({
+        host: this.cancelCallbackConfig.host,
+        port: this.cancelCallbackConfig.port,
+        path: this.cancelCallbackConfig.path,
+        onCancel: () => {
+          void this.stop();
+        },
+      });
+    }
+
     if (this.initiatorConfig && this.session) {
       await this.emitInitiatorEnvelopes();
     }
@@ -234,8 +267,10 @@ export class Participant {
     const sessionInfo: SessionInfo = {
       sessionId: this.sessionId,
       mode: this.mode,
-      participants: [],
-      policyVersion: undefined,
+      participants: this.participants,
+      modeVersion: this.modeVersion,
+      configurationVersion: this.configurationVersion,
+      policyVersion: this.policyVersion,
     };
 
     try {
@@ -248,8 +283,7 @@ export class Participant {
           actions: this.actions,
           session: sessionInfo,
           log: (msg: string, details?: Record<string, unknown>) => {
-            // eslint-disable-next-line no-console
-            console.log(`[${this.participantId}] ${msg}`, details ?? '');
+            logger.debug(`[${this.participantId}] ${msg}`, details ?? '');
           },
         };
 
@@ -300,6 +334,24 @@ export class Participant {
   async stop(): Promise<void> {
     this.running = false;
     await this.transport.stop();
+    if (this.cancelCallbackServer) {
+      const srv = this.cancelCallbackServer;
+      this.cancelCallbackServer = undefined;
+      try {
+        await srv.close();
+      } catch (err) {
+        logger.debug('cancel_callback close failed', err);
+      }
+    }
+  }
+
+  /**
+   * Attach a running cancel-callback HTTP server to this participant.
+   * The server is closed automatically when {@link stop} is called.
+   * Parity with python-sdk's `Participant.attach_cancel_callback_server`.
+   */
+  attachCancelCallbackServer(server: CancelCallbackServer): void {
+    this.cancelCallbackServer = server;
   }
 
   private async emitInitiatorEnvelopes(): Promise<void> {
@@ -311,6 +363,8 @@ export class Participant {
         intent: ss.intent,
         participants: ss.participants,
         ttlMs: ss.ttlMs,
+        contextId: ss.contextId,
+        extensions: ss.extensions,
         roots: ss.roots,
       });
     }

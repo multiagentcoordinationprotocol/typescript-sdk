@@ -22,6 +22,7 @@ import {
   TaskSession,
   HandoffSession,
   QuorumSession,
+  SessionLifecycleWatcher,
   buildDecisionPolicy,
   newSessionId,
 } from '../../src/index';
@@ -750,6 +751,139 @@ describe('Stream subscribe + history replay', () => {
 
       expect(received).not.toContain('Proposal');
     } finally {
+      bobClient.close();
+    }
+  });
+});
+
+// ── Initiator contextId + extensions round-trip (SDK-TS-1) ───────────
+//
+// End-to-end proof that the initiator path now forwards `contextId` and
+// `extensions` to the runtime, and that the runtime stamps them onto the
+// session metadata so `GetSession` sees them back. This is what CP-16/17/18
+// (control-plane projection) depends on.
+//
+// Uses bearer auth because v0.4.0 runtimes retired the dev-agent header path;
+// auto-skipped if MACP_TEST_BEARER_ALICE is not set, same as the
+// direct-agent-auth block below.
+
+const SDKTS1_ALICE = process.env.MACP_TEST_BEARER_ALICE ?? '';
+
+describe.skipIf(!SDKTS1_ALICE)('Initiator contextId + extensions round-trip (SDK-TS-1)', () => {
+  it('SessionStart carries contextId + extensions; GetSession echoes them back', async () => {
+    const authAlice = Auth.bearer(SDKTS1_ALICE, { expectedSender: 'alice' });
+    const aliceClient = makeClient(authAlice);
+    try {
+      const session = new DecisionSession(aliceClient, { auth: authAlice });
+      const ack = await session.start({
+        intent: 'context propagation smoke',
+        participants: ['alice', 'bob'],
+        ttlMs: 30_000,
+        contextId: 'ctx-upstream-run-7',
+        extensions: {
+          'aitp.tct': Buffer.from(JSON.stringify({ token: 't-int', issuer: 'iss-1' }), 'utf8'),
+          'ctxm.ref': Buffer.from(JSON.stringify('pack:example-001'), 'utf8'),
+        },
+        sender: 'alice',
+      });
+      expect(ack.ok).toBe(true);
+
+      const { metadata } = await aliceClient.getSession(session.sessionId, { auth: authAlice, deadlineMs: 5000 });
+      expect(metadata.contextId).toBe('ctx-upstream-run-7');
+      // Runtime surfaces extension *keys*; values stay opaque. That's the
+      // contract the control-plane projection reads (see plans SDK-TS-1 /
+      // CP-17). Key ordering is not guaranteed — compare as a set.
+      expect(new Set(metadata.extensionKeys ?? [])).toEqual(new Set(['aitp.tct', 'ctxm.ref']));
+    } finally {
+      aliceClient.close();
+    }
+  });
+});
+
+// ── Session enumeration + lifecycle watch (parity with SDK-PY-2/3) ──
+//
+// Runtime-backed parity check for the three Python-SDK gaps flagged in
+// python-sdk plans SDK-PY-2 (ListSessions), SDK-PY-3 (WatchSessions +
+// high-level SessionLifecycleWatcher) and SDK-PY-4 (advertise both
+// capabilities on Initialize). The TypeScript SDK already implements all
+// three; this block exercises them end-to-end against the runtime so any
+// regression is caught by CI.
+
+describe.skipIf(!SDKTS1_ALICE)('Session enumeration + lifecycle watch', () => {
+  it('listSessions returns a session created in this test run', async () => {
+    const authAlice = Auth.bearer(SDKTS1_ALICE, { expectedSender: 'alice' });
+    const aliceClient = makeClient(authAlice);
+    try {
+      const session = new DecisionSession(aliceClient, { auth: authAlice });
+      await session.start({
+        intent: 'listSessions smoke',
+        participants: ['alice', 'bob'],
+        ttlMs: 30_000,
+        sender: 'alice',
+      });
+
+      const sessions = await aliceClient.listSessions({ auth: authAlice, deadlineMs: 5000 });
+      // The runtime returns all sessions visible to this identity; the test
+      // only cares that ours is among them.
+      const ids = sessions.map((s) => s.sessionId);
+      expect(ids).toContain(session.sessionId);
+    } finally {
+      aliceClient.close();
+    }
+  });
+
+  it('SessionLifecycleWatcher emits a CREATED event for the initial snapshot', async () => {
+    // The runtime's WatchSessions stream first emits CREATED events for every
+    // currently-active session (initial sync), then streams new lifecycle
+    // transitions (see runtime server.rs:961). We exercise the deterministic
+    // snapshot path: start the session first, then subscribe and pull the
+    // first event. Testing the live-broadcast path would race Alice's Send
+    // against the tonic handler's broadcast-channel subscribe, which is
+    // flaky in CI.
+    const authAlice = Auth.bearer(SDKTS1_ALICE, { expectedSender: 'alice' });
+    const authBob = Auth.bearer(process.env.MACP_TEST_BEARER_BOB ?? '', { expectedSender: 'bob' });
+    const aliceClient = makeClient(authAlice);
+    const bobClient = makeClient(authBob);
+
+    try {
+      const session = new DecisionSession(aliceClient, { auth: authAlice });
+      await session.start({
+        intent: 'lifecycle watcher snapshot smoke',
+        participants: ['alice', 'bob'],
+        ttlMs: 30_000,
+        sender: 'alice',
+      });
+
+      const watcher = new SessionLifecycleWatcher(bobClient, { auth: authBob });
+      const controller = new AbortController();
+      const seenSessionIds = new Set<string>();
+      let seenEventType: string | undefined;
+
+      const consumer = (async () => {
+        try {
+          for await (const event of watcher.events(controller.signal)) {
+            if (event.session?.sessionId === session.sessionId) {
+              seenSessionIds.add(event.session.sessionId);
+              seenEventType = String(event.eventType);
+              controller.abort();
+              break;
+            }
+          }
+        } catch {
+          // AbortSignal fires as stream.cancel(); swallow the resulting reject.
+        }
+      })();
+
+      await Promise.race([consumer, new Promise((r) => setTimeout(r, 5000))]);
+      controller.abort();
+
+      expect(seenSessionIds.has(session.sessionId)).toBe(true);
+      // Runtime enum SessionLifecycleEvent.EventType.CREATED = 1. Protobuf
+      // decoders commonly surface enums either as numeric (1) or the string
+      // form ("EVENT_TYPE_CREATED"); accept both so the test is decoder-agnostic.
+      expect(seenEventType === 'EVENT_TYPE_CREATED' || seenEventType === '1' || seenEventType === 'CREATED').toBe(true);
+    } finally {
+      aliceClient.close();
       bobClient.close();
     }
   });

@@ -1,87 +1,121 @@
 import type { PolicyDescriptor } from './types';
 
-// ── Shared commitment rules (used by all modes) ───────────────────
+// ── Named policy rule types ─────────────────────────────────────────
+// Names are unprefixed to match python-sdk's `macp_sdk.policy` exports
+// so cross-SDK doc snippets and IDE auto-imports line up.
 
-export interface CommitmentRulesInput {
+export interface CommitmentRules {
   authority?: 'initiator_only' | 'any_participant' | 'designated_role';
   designatedRoles?: string[];
+  /** Decision-specific: require quorum before commit. Ignored for other modes. */
+  requireVoteQuorum?: boolean;
 }
 
-function serializeCommitment(commitment?: CommitmentRulesInput): Record<string, unknown> {
-  return {
-    authority: commitment?.authority ?? 'initiator_only',
-    designated_roles: commitment?.designatedRoles ?? [],
-  };
-}
-
-// ── Decision policy rule types ──────────────────────────────────────
-
-export interface DecisionVotingRules {
+export interface VotingRules {
   algorithm?: 'none' | 'majority' | 'supermajority' | 'unanimous' | 'weighted' | 'plurality';
   threshold?: number;
   quorum?: { type: 'count' | 'percentage'; value: number };
   weights?: Record<string, number>;
 }
 
-export interface DecisionObjectionHandling {
+export interface ObjectionHandlingRules {
   criticalSeverityVetoes?: boolean;
   vetoThreshold?: number;
 }
 
-export interface DecisionEvaluationRules {
+export interface EvaluationRules {
   minimumConfidence?: number;
   requiredBeforeVoting?: boolean;
 }
 
-export interface DecisionCommitmentRules {
-  authority?: 'initiator_only' | 'any_participant' | 'designated_role';
-  designatedRoles?: string[];
-  requireVoteQuorum?: boolean;
+export interface QuorumThreshold {
+  type: 'n_of_m' | 'percentage' | 'weighted';
+  value: number;
 }
+
+export interface AbstentionRules {
+  countsTowardQuorum?: boolean;
+  interpretation?: 'neutral' | 'implicit_reject' | 'ignored';
+}
+
+export interface ProposalAcceptanceRules {
+  criterion?: 'all_parties' | 'counterparty' | 'initiator';
+}
+
+export interface CounterProposalRules {
+  maxRounds?: number;
+}
+
+export interface RejectionRules {
+  terminalOnAnyReject?: boolean;
+}
+
+export interface TaskAssignmentRules {
+  allowReassignmentOnReject?: boolean;
+}
+
+export interface TaskCompletionRules {
+  requireOutput?: boolean;
+}
+
+export interface HandoffAcceptanceRules {
+  implicitAcceptTimeoutMs?: number;
+}
+
+// ── Deprecated mode-prefixed aliases (kept for back-compat) ───────
+
+/** @deprecated Use {@link CommitmentRules}. */
+export type CommitmentRulesInput = CommitmentRules;
+/** @deprecated Use {@link VotingRules}. */
+export type DecisionVotingRules = VotingRules;
+/** @deprecated Use {@link ObjectionHandlingRules}. */
+export type DecisionObjectionHandling = ObjectionHandlingRules;
+/** @deprecated Use {@link EvaluationRules}. */
+export type DecisionEvaluationRules = EvaluationRules;
+/** @deprecated Use {@link CommitmentRules}. */
+export type DecisionCommitmentRules = CommitmentRules;
+
+// ── Composite rule-input types per mode ──────────────────────────
 
 export interface DecisionPolicyRulesInput {
-  voting?: DecisionVotingRules;
-  objectionHandling?: DecisionObjectionHandling;
-  evaluation?: DecisionEvaluationRules;
-  commitment?: DecisionCommitmentRules;
+  voting?: VotingRules;
+  objectionHandling?: ObjectionHandlingRules;
+  evaluation?: EvaluationRules;
+  commitment?: CommitmentRules;
 }
-
-// ── Quorum policy rule types (RFC-MACP-0012 §4.2) ─────────────────
 
 export interface QuorumPolicyRulesInput {
-  threshold?: { type: 'n_of_m' | 'percentage' | 'weighted'; value: number };
-  abstention?: {
-    countsTowardQuorum?: boolean;
-    interpretation?: 'neutral' | 'implicit_reject' | 'ignored';
-  };
-  commitment?: CommitmentRulesInput;
+  threshold?: QuorumThreshold;
+  abstention?: AbstentionRules;
+  commitment?: CommitmentRules;
 }
-
-// ── Proposal policy rule types (RFC-MACP-0012 §4.3) ───────────────
 
 export interface ProposalPolicyRulesInput {
-  acceptance?: { criterion?: 'all_parties' | 'counterparty' | 'initiator' };
-  counterProposal?: { maxRounds?: number };
-  rejection?: { terminalOnAnyReject?: boolean };
-  commitment?: CommitmentRulesInput;
+  acceptance?: ProposalAcceptanceRules;
+  counterProposal?: CounterProposalRules;
+  rejection?: RejectionRules;
+  commitment?: CommitmentRules;
 }
-
-// ── Task policy rule types (RFC-MACP-0012 §4.4) ───────────────────
 
 export interface TaskPolicyRulesInput {
-  assignment?: { allowReassignmentOnReject?: boolean };
-  completion?: { requireOutput?: boolean };
-  commitment?: CommitmentRulesInput;
+  assignment?: TaskAssignmentRules;
+  completion?: TaskCompletionRules;
+  commitment?: CommitmentRules;
 }
 
-// ── Handoff policy rule types (RFC-MACP-0012 §4.5) ────────────────
-
 export interface HandoffPolicyRulesInput {
-  acceptance?: { implicitAcceptTimeoutMs?: number };
-  commitment?: CommitmentRulesInput;
+  acceptance?: HandoffAcceptanceRules;
+  commitment?: CommitmentRules;
 }
 
 // ── Builder helpers ─────────────────────────────────────────────────
+
+function serializeCommitment(commitment?: CommitmentRules): Record<string, unknown> {
+  return {
+    authority: commitment?.authority ?? 'initiator_only',
+    designated_roles: commitment?.designatedRoles ?? [],
+  };
+}
 
 export function buildDecisionPolicy(
   policyId: string,

@@ -3,10 +3,13 @@ import {
   buildEnvelope,
   buildSessionStartPayload,
   buildCommitmentPayload,
+  buildSignalPayload,
+  buildProgressPayload,
   newSessionId,
   newMessageId,
   newCommitmentId,
   inferOutcomePositive,
+  serializeMessage,
 } from '../../src/envelope';
 import { MACP_VERSION } from '../../src/constants';
 
@@ -170,6 +173,86 @@ describe('envelope builders', () => {
       });
       expect(payload.contextId).toBe('ctx-123');
       expect(payload.extensions).toBe(ext);
+    });
+  });
+
+  describe('buildSignalPayload', () => {
+    it('builds with required signalType and fills defaults', () => {
+      const p = buildSignalPayload({ signalType: 'agent.status' });
+      expect(p.signalType).toBe('agent.status');
+      expect(p.data).toEqual(Buffer.alloc(0));
+      expect(p.confidence).toBe(0);
+      expect(p.correlationSessionId).toBe('');
+    });
+
+    it('preserves explicit data/confidence/correlation', () => {
+      const p = buildSignalPayload({
+        signalType: 'agent.status',
+        data: Buffer.from('payload'),
+        confidence: 0.9,
+        correlationSessionId: 'sid-1',
+      });
+      expect(p.data?.toString()).toBe('payload');
+      expect(p.confidence).toBe(0.9);
+      expect(p.correlationSessionId).toBe('sid-1');
+    });
+
+    it('accepts Uint8Array data and normalises to Buffer', () => {
+      const data = new Uint8Array([0x01, 0x02, 0x03]);
+      const p = buildSignalPayload({ signalType: 'x', data });
+      expect(Buffer.isBuffer(p.data)).toBe(true);
+      expect(p.data).toEqual(Buffer.from([0x01, 0x02, 0x03]));
+    });
+  });
+
+  describe('buildProgressPayload', () => {
+    it('builds with required fields and defaults', () => {
+      const p = buildProgressPayload({
+        progressToken: 't1',
+        progress: 5,
+        total: 10,
+      });
+      expect(p.progressToken).toBe('t1');
+      expect(p.progress).toBe(5);
+      expect(p.total).toBe(10);
+      expect(p.message).toBe('');
+      expect(p.targetMessageId).toBe('');
+    });
+
+    it('preserves optional message and targetMessageId', () => {
+      const p = buildProgressPayload({
+        progressToken: 't1',
+        progress: 1,
+        total: 3,
+        message: 'halfway',
+        targetMessageId: 'm-42',
+      });
+      expect(p.message).toBe('halfway');
+      expect(p.targetMessageId).toBe('m-42');
+    });
+  });
+
+  describe('serializeMessage', () => {
+    it('calls serializeBinary() when present (protoc-gen-js style)', () => {
+      const bytes = new Uint8Array([1, 2, 3]);
+      const msg = { serializeBinary: () => bytes };
+      expect(serializeMessage(msg)).toBe(bytes);
+    });
+
+    it('calls toBinary() when present (protobuf-es / ts-proto style)', () => {
+      const bytes = new Uint8Array([4, 5]);
+      const msg = { toBinary: () => bytes };
+      expect(serializeMessage(msg)).toBe(bytes);
+    });
+
+    it('calls finish() when present (protobufjs Writer style)', () => {
+      const bytes = new Uint8Array([7, 7, 7]);
+      const msg = { finish: () => bytes };
+      expect(serializeMessage(msg)).toBe(bytes);
+    });
+
+    it('throws TypeError for plain objects without a serializer method', () => {
+      expect(() => serializeMessage({ hello: 'world' } as unknown)).toThrow(TypeError);
     });
   });
 

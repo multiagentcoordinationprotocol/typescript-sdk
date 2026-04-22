@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import * as grpc from '@grpc/grpc-js';
 import * as protoLoader from '@grpc/proto-loader';
 import { assertSenderMatchesIdentity, authSender, type AuthConfig, metadataFromAuth } from './auth';
-import { buildEnvelope } from './envelope';
+import { buildEnvelope, buildProgressPayload, buildSignalPayload } from './envelope';
 import { MacpAckError, MacpSdkError, MacpTransportError } from './errors';
 import { ProtoRegistry } from './proto-registry';
 import { validateSignalType } from './validation';
@@ -159,7 +159,7 @@ export class MacpClient {
     }
     this.defaultDeadlineMs = options.defaultDeadlineMs;
     this.clientName = options.clientName ?? 'macp-sdk-typescript';
-    this.clientVersion = options.clientVersion ?? '0.2.0';
+    this.clientVersion = options.clientVersion ?? '0.3.0';
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { protoDir: defaultProtoDir } = require('@multiagentcoordinationprotocol/proto');
     const protoDir = options.protoDir ?? defaultProtoDir;
@@ -470,12 +470,13 @@ export class MacpClient {
     validateSignalType(options.signalType, options.data);
     const auth = this.requireAuth(options.auth);
     assertSenderMatchesIdentity(auth, options.sender);
-    const payload = this.protoRegistry.encodeKnownPayload('', 'Signal', {
+    const signalPayload = buildSignalPayload({
       signalType: options.signalType,
-      data: options.data ?? Buffer.alloc(0),
-      confidence: options.confidence ?? 0,
-      correlationSessionId: options.correlationSessionId ?? '',
+      data: options.data,
+      confidence: options.confidence,
+      correlationSessionId: options.correlationSessionId,
     });
+    const payload = this.protoRegistry.encodeKnownPayload('', 'Signal', signalPayload as unknown as Record<string, unknown>);
     const envelope = buildEnvelope({
       mode: '',
       messageType: 'Signal',
@@ -500,13 +501,14 @@ export class MacpClient {
   }): Promise<Ack> {
     const auth = this.requireAuth(options.auth);
     assertSenderMatchesIdentity(auth, options.sender);
-    const payload = this.protoRegistry.encodeKnownPayload('', 'Progress', {
+    const progressPayload = buildProgressPayload({
       progressToken: options.progressToken,
       progress: options.progress,
       total: options.total,
-      message: options.message ?? '',
-      targetMessageId: options.targetMessageId ?? '',
+      message: options.message,
+      targetMessageId: options.targetMessageId,
     });
+    const payload = this.protoRegistry.encodeKnownPayload('', 'Progress', progressPayload as unknown as Record<string, unknown>);
     const envelope = buildEnvelope({
       mode: options.mode ?? '',
       messageType: 'Progress',

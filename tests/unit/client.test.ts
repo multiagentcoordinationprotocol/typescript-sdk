@@ -234,6 +234,49 @@ describe('client.sendSignal / sendProgress identity guard', () => {
   });
 });
 
+// ── MacpClient.listSessions ─────────────────────────────────────────
+//
+// Parity with SDK-PY-2: the TS SDK exposes ListSessions so orchestrators
+// and diagnostics tools can enumerate active sessions without polling
+// GetSession per id. The runtime guarantees an array response; the SDK
+// normalises a missing/undefined `sessions` field to `[]`.
+
+describe('MacpClient.listSessions', () => {
+  it('returns the runtime-reported sessions array verbatim', async () => {
+    const client = makeClient();
+    const sessions = [
+      {
+        sessionId: '550e8400-e29b-41d4-a716-446655440000',
+        mode: 'macp.mode.decision.v1',
+        state: 'SESSION_STATE_OPEN',
+        participants: ['alice', 'bob'],
+        contextId: 'ctx-1',
+        extensionKeys: ['aitp.tct'],
+      },
+    ];
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    grpcClient.ListSessions = (_req: unknown, _meta: unknown, cb: (err: null, res: unknown) => void) => {
+      cb(null, { sessions });
+    };
+
+    const result = await client.listSessions();
+    expect(result).toEqual(sessions);
+  });
+
+  it('normalises a missing `sessions` field to an empty array', async () => {
+    // Protobuf drops empty `repeated` fields on the wire; the SDK must not
+    // leak `undefined` to callers doing `for (const s of result)`.
+    const client = makeClient();
+    const grpcClient = (client as unknown as { client: Record<string, unknown> }).client;
+    grpcClient.ListSessions = (_req: unknown, _meta: unknown, cb: (err: null, res: unknown) => void) => {
+      cb(null, {});
+    };
+
+    const result = await client.listSessions();
+    expect(result).toEqual([]);
+  });
+});
+
 // ── newSessionId export ─────────────────────────────────────────────
 //
 // TS-3: `newSessionId` must be reachable from the top-level entry point so

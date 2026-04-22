@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_CONFIGURATION_VERSION, DEFAULT_MODE_VERSION, DEFAULT_POLICY_VERSION, MACP_VERSION } from './constants';
-import type { CommitmentPayload, Envelope, Root, SessionStartPayload } from './types';
+import type { CommitmentPayload, Envelope, ProgressPayload, Root, SessionStartPayload, SignalPayload } from './types';
 
 export function newSessionId(): string {
   return randomUUID();
@@ -74,6 +74,64 @@ export function buildCommitmentPayload(input: {
 
 export function buildRoot(uri: string, name = ''): Root {
   return { uri, name };
+}
+
+export function buildSignalPayload(input: {
+  signalType: string;
+  data?: Buffer | Uint8Array;
+  confidence?: number;
+  correlationSessionId?: string;
+}): SignalPayload {
+  const data = input.data instanceof Buffer ? input.data : input.data ? Buffer.from(input.data) : Buffer.alloc(0);
+  return {
+    signalType: input.signalType,
+    data,
+    confidence: input.confidence ?? 0,
+    correlationSessionId: input.correlationSessionId ?? '',
+  };
+}
+
+export function buildProgressPayload(input: {
+  progressToken: string;
+  progress: number;
+  total: number;
+  message?: string;
+  targetMessageId?: string;
+}): ProgressPayload {
+  return {
+    progressToken: input.progressToken,
+    progress: input.progress,
+    total: input.total,
+    message: input.message ?? '',
+    targetMessageId: input.targetMessageId ?? '',
+  };
+}
+
+type ProtoSerializable =
+  | { serializeBinary(): Uint8Array }
+  | { toBinary(): Uint8Array }
+  | { finish(): Uint8Array };
+
+export function serializeMessage(message: ProtoSerializable | unknown): Uint8Array {
+  // Parity with python-sdk `envelope.serialize_message`: invoke the protobuf
+  // serializer exposed on the message. Supports objects with `serializeBinary`
+  // (protoc-gen-js), `toBinary` (protobuf-es / ts-proto), or `finish`
+  // (protobufjs Writer). For plain JS interface payloads, use
+  // `ProtoRegistry.encodeKnownPayload(mode, messageType, payload)` instead —
+  // the registry owns the mode/messageType → descriptor mapping.
+  const candidate = message as Record<string, unknown>;
+  if (typeof candidate?.serializeBinary === 'function') {
+    return (candidate.serializeBinary as () => Uint8Array)();
+  }
+  if (typeof candidate?.toBinary === 'function') {
+    return (candidate.toBinary as () => Uint8Array)();
+  }
+  if (typeof candidate?.finish === 'function') {
+    return (candidate.finish as () => Uint8Array)();
+  }
+  throw new TypeError(
+    'serializeMessage: object is not a protobuf message — expected serializeBinary(), toBinary(), or finish() method. For plain JS payloads, use ProtoRegistry.encodeKnownPayload().',
+  );
 }
 
 /**

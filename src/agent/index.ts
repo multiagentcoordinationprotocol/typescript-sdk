@@ -1,4 +1,5 @@
 export * from './types';
+export * from './cancel-callback';
 export * from './dispatcher';
 export * from './participant';
 export * from './strategies';

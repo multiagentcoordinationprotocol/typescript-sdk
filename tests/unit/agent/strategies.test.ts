@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   evaluationHandler,
   functionEvaluator,
+  functionVoter,
+  functionCommitter,
   votingHandler,
   majorityVoter,
   commitmentHandler,
@@ -118,6 +120,66 @@ describe('strategies', () => {
       expect(fn).toHaveBeenCalledWith({ proposalId: 'p1' }, session);
       expect(result.recommendation).toBe('reject');
       expect(result.confidence).toBe(0.3);
+    });
+  });
+
+  describe('functionVoter', () => {
+    it('creates a VotingStrategy from shouldVote + decideVote functions', async () => {
+      const shouldVote = vi.fn().mockReturnValue(true);
+      const decideVote = vi.fn().mockResolvedValue({ vote: 'approve', reason: 'sure' });
+      const strategy = functionVoter(shouldVote, decideVote);
+      const projection = new DecisionProjection();
+
+      expect(strategy.shouldVote(projection)).toBe(true);
+      const result = await strategy.decideVote(projection);
+      expect(result).toEqual({ vote: 'approve', reason: 'sure' });
+      expect(shouldVote).toHaveBeenCalledWith(projection);
+      expect(decideVote).toHaveBeenCalledWith(projection);
+    });
+
+    it('integrates with votingHandler — gate blocks when shouldVote is false', async () => {
+      const decideVote = vi.fn();
+      const strategy = functionVoter(
+        () => false,
+        decideVote,
+      );
+      const handler = votingHandler(strategy);
+      const ctx = makeContext();
+      await handler(makeMessage('Evaluation', { proposalId: 'p1' }), ctx);
+      expect(decideVote).not.toHaveBeenCalled();
+      expect(ctx.actions.vote).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('functionCommitter', () => {
+    it('creates a CommitmentStrategy from shouldCommit + decideCommitment functions', async () => {
+      const shouldCommit = vi.fn().mockReturnValue(true);
+      const decideCommitment = vi.fn().mockResolvedValue({
+        action: 'ship',
+        authorityScope: 'ops',
+        reason: 'green build',
+      });
+      const strategy = functionCommitter(shouldCommit, decideCommitment);
+      const projection = new DecisionProjection();
+
+      expect(strategy.shouldCommit(projection)).toBe(true);
+      const result = await strategy.decideCommitment(projection);
+      expect(result.action).toBe('ship');
+      expect(shouldCommit).toHaveBeenCalledWith(projection);
+      expect(decideCommitment).toHaveBeenCalledWith(projection);
+    });
+
+    it('integrates with commitmentHandler — gate blocks when shouldCommit is false', async () => {
+      const decideCommitment = vi.fn();
+      const strategy = functionCommitter(
+        () => false,
+        decideCommitment,
+      );
+      const handler = commitmentHandler(strategy);
+      const ctx = makeContext();
+      await handler(makeMessage('Vote'), ctx);
+      expect(decideCommitment).not.toHaveBeenCalled();
+      expect(ctx.actions.commit).not.toHaveBeenCalled();
     });
   });
 
