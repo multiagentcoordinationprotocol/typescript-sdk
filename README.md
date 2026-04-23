@@ -62,10 +62,13 @@ client.close();
 
 ## Architecture
 
-The SDK uses a **two-layer** design:
+The SDK uses a **three-layer** design:
 
-- **Low-level transport** (`MacpClient`): gRPC connection to the runtime with all 14 RPCs — `initialize`, `send`, `openStream`, `getSession`, `cancelSession`, `getManifest`, `listModes`, `listRoots`, `listExtModes`, `registerExtMode`, `unregisterExtMode`, `promoteMode`, plus streaming watchers.
-- **High-level session helpers**: One class per coordination mode (`DecisionSession`, `ProposalSession`, `TaskSession`, `HandoffSession`, `QuorumSession`). Each wraps `MacpClient`, builds envelopes, encodes payloads, and maintains a local state projection.
+- **Low-level transport** (`MacpClient`): typed wrappers around every `MACPRuntimeService` RPC — `initialize`, `send`, `openStream`, `getSession`, `cancelSession`, `listSessions`, `getManifest`, `listModes`, `listRoots`, `listExtModes`, `registerExtMode`, `unregisterExtMode`, `promoteMode`, the policy RPCs (`register`/`unregister`/`get`/`listPolicies`), plus streaming watchers (`ModeRegistryWatcher`, `RootsWatcher`, `SignalWatcher`, `PolicyWatcher`, `SessionLifecycleWatcher`).
+- **High-level session helpers**: one class per coordination mode (`DecisionSession`, `ProposalSession`, `TaskSession`, `HandoffSession`, `QuorumSession`) — wraps `MacpClient`, builds envelopes, encodes payloads, and maintains a local state projection.
+- **Agent framework** (`src/agent/`): event-driven `Participant` with strategy-based handlers, bootstrap runner (`fromBootstrap`), gRPC/HTTP transports, and the optional cancel-callback HTTP server.
+
+See [`docs/guides/architecture.md`](docs/guides/architecture.md) for the full map.
 
 Every session class follows the same pattern:
 1. Construct with a `MacpClient` and options
@@ -261,6 +264,35 @@ Bootstrap files can include an `initiator` section for participants that start t
   }
 }
 ```
+
+### Strategies
+
+Composable handler factories for Decision Mode — register them directly on a
+`Participant`:
+
+```typescript
+participant
+  .on('Proposal', agent.evaluationHandler(agent.functionEvaluator(async (p) => ({
+    recommendation: 'APPROVE', confidence: 0.9, reason: 'looks good',
+  }))))
+  .on('Evaluation', agent.votingHandler(agent.majorityVoter({ positiveThreshold: 0.6 })))
+  .on('Vote', agent.commitmentHandler(agent.majorityCommitter({ quorumSize: 2 })));
+```
+
+Each layer has a prebuilt and a function-wrapper form: `functionEvaluator`,
+`functionVoter`, `functionCommitter` (zero-ceremony wrappers) next to
+`majorityVoter` / `majorityCommitter` (batteries-included defaults). Full
+reference: [`docs/api/strategies.md`](docs/api/strategies.md).
+
+### Cancel Callback
+
+Long-running agents can expose an HTTP endpoint that an orchestrator POSTs to
+in order to request a clean shutdown (RFC-MACP-0001 §7.2 Option A). Bootstrap
+JSON with a `cancel_callback: { host, port, path }` block auto-wires the
+server via `fromBootstrap()`; for the manual path use
+`startCancelCallbackServer(...)` + `Participant.attachCancelCallbackServer(...)`.
+See [`docs/api/cancel-callback.md`](docs/api/cancel-callback.md) and
+[`examples/cancel-callback.ts`](examples/cancel-callback.ts).
 
 ## Authentication
 

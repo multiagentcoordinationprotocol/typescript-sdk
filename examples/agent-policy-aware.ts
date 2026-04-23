@@ -1,14 +1,18 @@
-// Example: an agent Participant that uses function strategies to act on
-// projection + session state in a policy-aware way. The policyVersion on the
-// session is passed into the strategy so it can tighten its rules under a
-// stricter policy.
+// Example: a policy-aware agent `Participant` that showcases all three
+// function-wrapped strategies from src/agent/strategies.ts:
+//   - functionEvaluator — turns a function into an EvaluationStrategy
+//   - functionVoter     — turns (shouldVote, decideVote) into a VotingStrategy
+//   - functionCommitter — turns (shouldCommit, decideCommit) into a CommitmentStrategy
+//
+// The session's policyVersion is read in each strategy so stricter policies
+// tighten the rules without any class boilerplate.
 //
 // Requires a running MACP Rust runtime on localhost:50051:
 //   docker run -d --name macp-runtime-test -p 50051:50051 \
 //     -e MACP_BIND_ADDR=0.0.0.0:50051 -e MACP_ALLOW_INSECURE=1 \
 //     -e MACP_ALLOW_DEV_SENDER_HEADER=1 -e MACP_MEMORY_ONLY=1 macp-runtime
 //
-// Run: npx tsx examples/agent-policy-aware.ts
+// Run: npx tsx examples/agent-policy-aware.ts <session-id>
 
 import {
   Auth,
@@ -73,9 +77,20 @@ async function main(): Promise<void> {
       },
     );
 
+    // functionCommitter — same wrapper idea for the final commit step.
+    const committer = agent.functionCommitter(
+      (projection) => (projection.voteTotals()['APPROVE'] ?? 0) >= 1,
+      async (projection) => ({
+        action: 'decided',
+        authorityScope: 'team',
+        reason: `winner=${projection.majorityWinner() ?? 'unknown'}`,
+      }),
+    );
+
     participant
       .on('Proposal', agent.evaluationHandler(evaluator))
       .on('Evaluation', agent.votingHandler(voter))
+      .on('Vote', agent.commitmentHandler(committer))
       .onTerminal((result) => {
         console.log('[agent-policy-aware] terminal:', result.state, result.commitment);
       });
